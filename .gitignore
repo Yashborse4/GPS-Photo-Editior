@@ -1,0 +1,16 @@
+*.iml
+.gradle
+/local.properties
+/.idea/
+.DS_Store
+/build
+*/build
+.cxx
+*.apk
+*.aab
+captures/
+
+# Sensitive properties
+secrets.properties
+!secrets.properties.example
+!local.defaults.properties

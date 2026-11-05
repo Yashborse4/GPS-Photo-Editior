@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">GPS Map Camera</string>
+    <string name="camera_overlay_description">GPS Map Camera Overlay</string>
+</resources>
