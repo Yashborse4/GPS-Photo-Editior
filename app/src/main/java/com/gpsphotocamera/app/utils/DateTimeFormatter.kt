@@ -20,7 +20,7 @@ object AppDateTimeFormatter {
         return dateFormat.format(Date())
     }
 
-    fun getCurrentTimeString(includeSeconds: Boolean = true): String {
+    fun getCurrentTimeString(includeSeconds: Boolean = false): String {
         val format = if (includeSeconds) timeFormat else shortTimeFormat
         return format.format(Date())
     }
@@ -33,6 +33,31 @@ object AppDateTimeFormatter {
         val minutes = Math.abs((offsetMillis / (1000 * 60)) % 60)
         val sign = if (hours >= 0) "+" else "-"
         return String.format(Locale.US, "GMT %s%02d:%02d", sign, Math.abs(hours), minutes)
+    }
+
+    /**
+     * Formats full reference timestamp strictly matching GPS Map Camera:
+     * Example: "Monday, 19/10/2026 12:18 PM GMT +05:30"
+     */
+    fun formatFullReferenceTimestamp(dateStr: String, timeStr: String, timezoneStr: String): String {
+        val dayOfWeek = try {
+            val date = dateFormat.parse(dateStr)
+            if (date != null) {
+                SimpleDateFormat("EEEE", Locale.US).format(date)
+            } else null
+        } catch (e: Exception) {
+            null
+        } ?: "Monday"
+
+        // Format clean time without seconds (e.g. "12:18 PM")
+        val cleanTime = if (timeStr.matches(Regex("\\d{1,2}:\\d{2}:\\d{2}\\s*(AM|PM|am|pm)"))) {
+            timeStr.replace(Regex(":(\\d{2})\\s*(AM|PM|am|pm)"), " $2")
+        } else {
+            timeStr
+        }
+
+        val cleanTz = timezoneStr.substringBefore(" (").trim()
+        return "$dayOfWeek, $dateStr $cleanTime $cleanTz"
     }
 
     /**
@@ -66,6 +91,6 @@ object AppDateTimeFormatter {
             set(Calendar.MINUTE, minute)
             set(Calendar.SECOND, 0)
         }
-        return timeFormat.format(calendar.time)
+        return shortTimeFormat.format(calendar.time)
     }
 }

@@ -11,15 +11,15 @@ import org.junit.Test
 
 /**
  * Unit tests for GpsPhotoData formatting, cardinal coordinate calculation,
- * and DateTimeFormatter utility operations.
+ * exact reference formatting, and DateTimeFormatter utility operations.
  */
 class GpsPhotoDataTest {
 
     @Test
     fun testDefaultGpsPhotoDataValues() {
         val data = GpsPhotoData()
-        assertEquals(18.520430, data.latitude, 0.000001)
-        assertEquals(73.856744, data.longitude, 0.000001)
+        assertEquals(18.518084, data.latitude, 0.000001)
+        assertEquals(73.835936, data.longitude, 0.000001)
         assertEquals("Pune, Maharashtra, India", data.locationHeading)
         assertEquals(StampStyle.CLASSIC_BOTTOM, data.stampStyle)
         assertEquals(AppMapType.SATELLITE, data.mapType)
@@ -56,13 +56,25 @@ class GpsPhotoDataTest {
     }
 
     @Test
+    fun testFormattedCoordinatesExact() {
+        val data = GpsPhotoData(latitude = 18.518084, longitude = 73.835936)
+        assertEquals("Lat 18.518084° Long 73.835936°", data.formattedCoordinatesExact())
+    }
+
+    @Test
+    fun testHeadingWithFlag() {
+        val data = GpsPhotoData(locationHeading = "Pune, Maharashtra, India")
+        assertEquals("Pune, Maharashtra, India 🇮🇳", data.headingWithFlag)
+    }
+
+    @Test
     fun testFormattedTimestampWithZone() {
         val data = GpsPhotoData(
-            dateString = "03/11/2026",
-            timeString = "02:45:00 PM",
+            dateString = "19/10/2026",
+            timeString = "12:18 PM",
             timezone = "GMT +05:30"
         )
-        assertEquals("03/11/2026 02:45:00 PM GMT +05:30", data.formattedTimestampWithZone())
+        assertEquals("Monday, 19/10/2026 12:18 PM GMT +05:30", data.formattedTimestampWithZone())
     }
 
     @Test
@@ -75,8 +87,7 @@ class GpsPhotoDataTest {
     @Test
     fun testTimeFormatting() {
         val formattedTime = AppDateTimeFormatter.formatTime(14, 30)
-        // 14:30 should format as 02:30:00 PM
-        assertTrue(formattedTime.contains("02:30:00") && formattedTime.contains("PM"))
+        assertTrue(formattedTime.contains("02:30") && formattedTime.contains("PM"))
     }
 
     @Test

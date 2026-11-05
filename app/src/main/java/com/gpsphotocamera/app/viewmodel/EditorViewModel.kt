@@ -51,22 +51,28 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     private val _photoData = MutableStateFlow(
         GpsPhotoData(
-            dateString = AppDateTimeFormatter.getCurrentDateString(),
-            timeString = AppDateTimeFormatter.getCurrentTimeString(),
-            timezone = AppDateTimeFormatter.getCurrentTimezoneString()
+            latitude = 18.518084,
+            longitude = 73.835936,
+            locationHeading = "Pune, Maharashtra, India",
+            postalAddress = "870/7, Bhandarkar Rd, Near Hdfc Bank, Shreeman Society, Deccan Gymkhana, Pune, Maharashtra 411004, India",
+            customNote = "Captured by GPS Map Camera",
+            dateString = "19/10/2026",
+            timeString = "12:18 PM",
+            timezone = "GMT +05:30",
+            mapType = AppMapType.SATELLITE
         )
     )
     val photoData: StateFlow<GpsPhotoData> = _photoData.asStateFlow()
 
     // String representations for text input fields
-    val latitudeInput = MutableStateFlow("18.520430")
-    val longitudeInput = MutableStateFlow("73.856744")
+    val latitudeInput = MutableStateFlow("18.518084")
+    val longitudeInput = MutableStateFlow("73.835936")
     val locationHeadingInput = MutableStateFlow("Pune, Maharashtra, India")
-    val postalAddressInput = MutableStateFlow("Shivaji Nagar, Pune, Maharashtra 411005, India")
-    val dateInput = MutableStateFlow(AppDateTimeFormatter.getCurrentDateString())
-    val timeInput = MutableStateFlow(AppDateTimeFormatter.getCurrentTimeString())
-    val timezoneInput = MutableStateFlow(AppDateTimeFormatter.getCurrentTimezoneString())
-    val customNoteInput = MutableStateFlow("Site Survey & Inspection")
+    val postalAddressInput = MutableStateFlow("870/7, Bhandarkar Rd, Near Hdfc Bank, Shreeman Society, Deccan Gymkhana, Pune, Maharashtra 411004, India")
+    val dateInput = MutableStateFlow("19/10/2026")
+    val timeInput = MutableStateFlow("12:18 PM")
+    val timezoneInput = MutableStateFlow("GMT +05:30")
+    val customNoteInput = MutableStateFlow("Captured by GPS Map Camera")
 
     // UI generation & loading state
     private val _isGenerating = MutableStateFlow(false)
