@@ -16,6 +16,7 @@ import java.io.OutputStream
 /**
  * Handles saving generated bitmaps to Android MediaStore gallery
  * supporting Scoped Storage on Android 10+ and legacy storage on Android 8-9.
+ * Fully supports JPEG (95% quality) and lossless PNG exports.
  */
 object MediaStoreHelper {
 
@@ -24,16 +25,22 @@ object MediaStoreHelper {
     suspend fun saveBitmapToGallery(
         context: Context,
         bitmap: Bitmap,
-        titlePrefix: String = "GPS_PHOTO"
+        titlePrefix: String = "GPS_PHOTO",
+        compressFormat: Bitmap.CompressFormat = Bitmap.CompressFormat.JPEG
     ): Result<Pair<Uri, String?>> = withContext(Dispatchers.IO) {
-        val filename = "${titlePrefix}_${System.currentTimeMillis()}.jpg"
+        val isPng = compressFormat == Bitmap.CompressFormat.PNG
+        val extension = if (isPng) "png" else "jpg"
+        val mimeType = if (isPng) "image/png" else "image/jpeg"
+        val quality = if (isPng) 100 else 95
+
+        val filename = "${titlePrefix}_${System.currentTimeMillis()}.$extension"
         val resolver = context.contentResolver
 
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val contentValues = ContentValues().apply {
                     put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
-                    put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
+                    put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
                     put(
                         MediaStore.MediaColumns.RELATIVE_PATH,
                         Environment.DIRECTORY_PICTURES + File.separator + DIRECTORY_NAME
@@ -52,14 +59,15 @@ object MediaStoreHelper {
                 }
 
                 stream.use { out ->
-                    bitmap.compress(Bitmap.CompressFormat.JPEG, 95, out)
+                    bitmap.compress(compressFormat, quality, out)
                 }
 
                 contentValues.clear()
                 contentValues.put(MediaStore.MediaColumns.IS_PENDING, 0)
                 resolver.update(imageUri, contentValues, null, null)
 
-                Result.success(Pair(imageUri, null))
+                val displayPath = "Pictures/$DIRECTORY_NAME/$filename"
+                Result.success(Pair(imageUri, displayPath))
             } else {
                 // Android 8.0 - 9.0 (API 26-28)
                 val picturesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
@@ -70,12 +78,12 @@ object MediaStoreHelper {
 
                 val destFile = File(appDir, filename)
                 FileOutputStream(destFile).use { out ->
-                    bitmap.compress(Bitmap.CompressFormat.JPEG, 95, out)
+                    bitmap.compress(compressFormat, quality, out)
                 }
 
                 val contentValues = ContentValues().apply {
                     put(MediaStore.Images.Media.DATA, destFile.absolutePath)
-                    put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+                    put(MediaStore.Images.Media.MIME_TYPE, mimeType)
                     put(MediaStore.Images.Media.DISPLAY_NAME, filename)
                 }
 

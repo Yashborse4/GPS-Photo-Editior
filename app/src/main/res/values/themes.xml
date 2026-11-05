@@ -5,4 +5,5 @@
         <item name="android:navigationBarColor">#121212</item>
         <item name="android:windowLightStatusBar">false</item>
     </style>
+    <style name="Theme.GPSPhotoCamera" parent="Theme.GpsMapCamera" />
 </resources>

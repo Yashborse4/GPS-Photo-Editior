@@ -27,7 +27,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EditLocation
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.MyLocation
-import androidx.compose.material.icons.filled.Notes
+import androidx.compose.material.icons.automirrored.filled.Notes
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.Button
@@ -394,7 +394,7 @@ fun PhotoEditorScreen(
                     onValueChange = viewModel::updateNote,
                     label = stringResource(id = R.string.custom_note),
                     placeholder = stringResource(id = R.string.custom_note_hint),
-                    leadingIcon = Icons.Default.Notes
+                    leadingIcon = Icons.AutoMirrored.Filled.Notes
                 )
 
                 // 6. Stamp Style Selection

@@ -1,5 +1,6 @@
 package com.gpsphotocamera.app.ui.screens.home
 
+import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -24,6 +25,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddPhotoAlternate
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.Button
@@ -41,6 +43,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -48,6 +51,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.gpsphotocamera.app.R
 import com.gpsphotocamera.app.viewmodel.HomeViewModel
+import java.io.File
 
 @Composable
 fun HomeScreen(
@@ -56,6 +60,7 @@ fun HomeScreen(
     onViewRecentPhoto: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val recentPhotos by viewModel.recentPhotos.collectAsState()
 
     // Android Modern Photo Picker Launcher (API 26-35 compatible)
@@ -189,23 +194,50 @@ fun HomeScreen(
                 }
             }
 
-            // 3. Start Editing Button (Alternative / Demo)
+            // 3. Start Editing / Sample Photo Row
             item {
-                OutlinedButton(
-                    onClick = {
-                        photoPickerLauncher.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                        )
-                    },
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier.fillMaxWidth()
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Icon(imageVector = Icons.Default.Edit, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = stringResource(id = R.string.start_editing),
-                        style = MaterialTheme.typography.labelLarge
-                    )
+                    OutlinedButton(
+                        onClick = {
+                            photoPickerLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
+                        },
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(imageVector = Icons.Default.Edit, contentDescription = null)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = stringResource(id = R.string.start_editing),
+                            style = MaterialTheme.typography.labelLarge
+                        )
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            val sampleUri = loadSamplePhotoUri(context)
+                            if (sampleUri != null) {
+                                onPhotoSelectedForEditing(sampleUri)
+                            } else {
+                                photoPickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            }
+                        },
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(imageVector = Icons.Default.AutoAwesome, contentDescription = null)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Sample Photo",
+                            style = MaterialTheme.typography.labelLarge
+                        )
+                    }
                 }
             }
 
@@ -275,5 +307,25 @@ fun HomeScreen(
                 }
             }
         }
+    }
+}
+
+/**
+ * Copies the bundled sample photograph from assets into the app cache
+ * so it can be picked and edited immediately on emulators or fresh installs.
+ */
+private fun loadSamplePhotoUri(context: Context): Uri? {
+    return try {
+        val sampleFile = File(context.cacheDir, "sample_reference_photo.jpg")
+        if (!sampleFile.exists()) {
+            context.assets.open("sample_photo.jpg").use { input ->
+                sampleFile.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            }
+        }
+        Uri.fromFile(sampleFile)
+    } catch (e: Exception) {
+        null
     }
 }

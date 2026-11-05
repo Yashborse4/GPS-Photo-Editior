@@ -14,3 +14,5 @@ captures/
 secrets.properties
 !secrets.properties.example
 !local.defaults.properties
+
+.kotlin/

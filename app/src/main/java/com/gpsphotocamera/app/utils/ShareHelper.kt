@@ -9,10 +9,15 @@ import android.net.Uri
  */
 object ShareHelper {
 
-    fun shareImage(context: Context, imageUri: Uri, heading: String = "GPS Map Photograph") {
+    fun shareImage(
+        context: Context,
+        imageUri: Uri,
+        heading: String = "GPS Map Photograph",
+        mimeType: String = "image/jpeg"
+    ) {
         try {
             val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                type = "image/jpeg"
+                type = mimeType
                 putExtra(Intent.EXTRA_STREAM, imageUri)
                 putExtra(Intent.EXTRA_SUBJECT, heading)
                 putExtra(Intent.EXTRA_TEXT, "Captured with GPS Photo Camera - $heading")

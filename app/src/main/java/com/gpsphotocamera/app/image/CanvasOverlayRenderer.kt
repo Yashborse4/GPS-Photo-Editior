@@ -3,10 +3,9 @@ package com.gpsphotocamera.app.image
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.LinearGradient
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.RectF
-import android.graphics.Shader
 import android.graphics.Typeface
 import android.text.Layout
 import android.text.StaticLayout
@@ -16,344 +15,415 @@ import com.gpsphotocamera.app.data.model.StampStyle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.max
-import kotlin.math.min
+import kotlin.math.roundToInt
 
 /**
  * High-precision graphics rendering engine that draws the GPS Map Camera
  * metadata overlay, satellite map thumbnail, coordinates, and timestamps
  * onto the target photograph using Android Canvas and Bitmap APIs.
+ *
+ * Implements resolution-independent scaling with normalized coordinates (normX, normY)
+ * so the preview position translates with 100% fidelity to the high-resolution output.
  */
 object CanvasOverlayRenderer {
 
-    /**
-     * Renders the complete GPS information overlay on top of [baseBitmap]
-     * using the metadata provided in [data] and map tile [mapThumbnail].
-     *
-     * Returns a new immutable [Bitmap] with the stamp permanently applied.
-     */
     suspend fun renderOverlay(
         baseBitmap: Bitmap,
         data: GpsPhotoData,
-        mapThumbnail: Bitmap
+        mapThumbnail: Bitmap?
     ): Bitmap = withContext(Dispatchers.Default) {
-        // Create a mutable copy with ARGB_8888 config to support alpha blending
         val outputBitmap = baseBitmap.copy(Bitmap.Config.ARGB_8888, true)
         val canvas = Canvas(outputBitmap)
 
         val imageWidth = outputBitmap.width.toFloat()
         val imageHeight = outputBitmap.height.toFloat()
 
-        // Responsive scaling factor based on 1080px reference width
-        val scale = max(0.5f, imageWidth / 1080f)
+        // Responsive scaling factor based on 1080px baseline
+        val scale = max(0.6f, imageWidth / 1080f)
 
         when (data.stampStyle) {
             StampStyle.CLASSIC_BOTTOM -> {
-                drawClassicBottomBanner(canvas, imageWidth, imageHeight, scale, data, mapThumbnail)
-            }
-            StampStyle.MODERN_CARD -> {
-                drawModernFloatingCard(canvas, imageWidth, imageHeight, scale, data, mapThumbnail)
+                drawClassicPreset(canvas, imageWidth, imageHeight, scale, data, mapThumbnail)
             }
             StampStyle.COMPACT_MINIMAL -> {
-                drawCompactMinimalBanner(canvas, imageWidth, imageHeight, scale, data, mapThumbnail)
+                drawCompactPreset(canvas, imageWidth, imageHeight, scale, data, mapThumbnail)
+            }
+            StampStyle.MODERN_CARD -> {
+                drawModernCardPreset(canvas, imageWidth, imageHeight, scale, data, mapThumbnail)
+            }
+            StampStyle.MINIMAL_WATERMARK -> {
+                drawMinimalWatermarkPreset(canvas, imageWidth, imageHeight, scale, data)
             }
         }
 
         outputBitmap
     }
 
+    private fun getTypeface(family: String, isBold: Boolean): Typeface {
+        val baseTypeface = when (family.uppercase()) {
+            "MONOSPACE" -> Typeface.MONOSPACE
+            "SERIF" -> Typeface.SERIF
+            else -> Typeface.DEFAULT
+        }
+        val style = if (isBold) Typeface.BOLD else Typeface.NORMAL
+        return Typeface.create(baseTypeface, style)
+    }
+
     /**
-     * Classic GPS Map Camera layout:
-     * Full-width dark semi-transparent banner at the bottom with:
-     * - Square satellite map thumbnail on the left
-     * - Location heading (bold)
-     * - Full postal address (multi-line)
-     * - GPS coordinates (Lat / Long)
-     * - Date, Time & Timezone
-     * - Custom note
-     * - GPS Camera watermark badge
+     * Classic GPS Map Camera layout strictly reproducing the reference photograph:
+     * - Dark translucent card
+     * - Left: Map thumbnail with red pin & compass rose
+     * - Right: Heading, address, coordinates, altitude + compass, date/time, note
+     * - Top-right badge "GPS Map Camera"
      */
-    private fun drawClassicBottomBanner(
+    private fun drawClassicPreset(
         canvas: Canvas,
         width: Float,
         height: Float,
         scale: Float,
         data: GpsPhotoData,
-        mapThumbnail: Bitmap
+        mapThumbnail: Bitmap?
     ) {
-        val bannerPadding = 24f * scale
-        val mapSize = 220f * scale
-        val contentLeft = bannerPadding + mapSize + (20f * scale)
-        val contentRight = width - bannerPadding
+        val panelWidth = (width * data.panelWidthPercent * data.scale).coerceAtMost(width * 0.98f)
+        val padding = data.panelHeightPaddingDp * scale * 1.4f
+        val cornerRadius = data.cornerRadiusDp * scale
 
-        // 1. Calculate height needed for content (including wrapped address and note)
-        val titleTextPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.WHITE
-            textSize = 28f * scale
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        val typeface = getTypeface(data.fontFamily, data.isBold)
+        val titleTypeface = getTypeface(data.fontFamily, true)
+
+        val titleSize = 22f * scale * data.fontSizeMultiplier
+        val bodySize = 16f * scale * data.fontSizeMultiplier
+        val metaSize = 14.5f * scale * data.fontSizeMultiplier
+        val lineSpacing = data.lineSpacingDp * scale
+
+        val textColor = data.textColorHex.toInt()
+        val accentColor = data.accentColorHex.toInt()
+
+        // Map dimensions
+        val showMap = data.showMap && mapThumbnail != null
+        val mapWidth = if (showMap) (panelWidth * 0.28f * data.mapThumbnailScale).coerceAtLeast(100f * scale) else 0f
+        val mapHeight = when (data.mapAspectRatio) {
+            "LANDSCAPE" -> mapWidth * 0.75f
+            "WIDE" -> mapWidth * 0.56f
+            else -> mapWidth
         }
 
-        val addressTextPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.rgb(226, 232, 240) // Slate 200
-            textSize = 19f * scale
-            typeface = Typeface.DEFAULT
+        val textContentWidth = if (showMap) {
+            panelWidth - mapWidth - (padding * 2.5f)
+        } else {
+            panelWidth - (padding * 2f)
+        }.toInt().coerceAtLeast(100)
+
+        // Text paints
+        val titlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = textColor
+            textSize = titleSize
+            this.typeface = titleTypeface
         }
 
-        val availableTextWidth = (contentRight - contentLeft).toInt().coerceAtLeast(100)
-        val addressLayout = StaticLayout.Builder.obtain(
-            data.postalAddress,
-            0,
-            data.postalAddress.length,
-            addressTextPaint,
-            availableTextWidth
-        ).setAlignment(Layout.Alignment.ALIGN_NORMAL)
-            .setLineSpacing(2f * scale, 1f)
-            .setMaxLines(3)
-            .build()
-
-        val addressHeight = addressLayout.height.toFloat()
-
-        val metaTextPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.rgb(52, 211, 153) // Emerald accent for coordinates
-            textSize = 19f * scale
-            typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+        val addressPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(230, Color.red(textColor), Color.green(textColor), Color.blue(textColor))
+            textSize = bodySize
+            this.typeface = typeface
         }
 
-        val timeTextPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.rgb(203, 213, 225) // Slate 300
-            textSize = 18f * scale
-            typeface = Typeface.DEFAULT
+        val coordPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = accentColor
+            textSize = metaSize
+            this.typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
         }
 
-        val noteTextPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.rgb(253, 224, 71) // Warm amber for note
-            textSize = 17f * scale
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.ITALIC)
+        val metaPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(220, Color.red(textColor), Color.green(textColor), Color.blue(textColor))
+            textSize = metaSize
+            this.typeface = typeface
         }
 
-        var textContentHeight = (32f * scale) + // Title
-                (8f * scale) + addressHeight + // Address
-                (8f * scale) + (22f * scale) + // Coordinates
-                (6f * scale) + (20f * scale)   // Timestamp
-
-        if (data.customNote.isNotBlank()) {
-            textContentHeight += (6f * scale) + (20f * scale)
+        val notePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.rgb(253, 224, 71) // Warm Amber
+            textSize = metaSize
+            this.typeface = typeface
         }
 
-        val bannerContentHeight = max(mapSize, textContentHeight)
-        val bannerHeight = bannerContentHeight + (bannerPadding * 2)
-        val bannerTop = height - bannerHeight
+        // Layout text lines
+        val alignment = when (data.textAlign.uppercase()) {
+            "CENTER" -> Layout.Alignment.ALIGN_CENTER
+            "RIGHT" -> Layout.Alignment.ALIGN_OPPOSITE
+            else -> Layout.Alignment.ALIGN_NORMAL
+        }
 
-        // 2. Draw Translucent Dark Gradient Banner Background
+        val titleLayout = StaticLayout.Builder.obtain(data.locationHeading, 0, data.locationHeading.length, titlePaint, textContentWidth)
+            .setAlignment(alignment).setMaxLines(1).build()
+
+        val addressLayout = StaticLayout.Builder.obtain(data.postalAddress, 0, data.postalAddress.length, addressPaint, textContentWidth)
+            .setAlignment(alignment).setMaxLines(2).build()
+
+        val coordsText = data.formattedCoordinates()
+        val coordsLayout = StaticLayout.Builder.obtain(coordsText, 0, coordsText.length, coordPaint, textContentWidth)
+            .setAlignment(alignment).setMaxLines(1).build()
+
+        val altHeadingText = data.formattedAltitudeCompass()
+        val altLayout = StaticLayout.Builder.obtain(altHeadingText, 0, altHeadingText.length, metaPaint, textContentWidth)
+            .setAlignment(alignment).setMaxLines(1).build()
+
+        val dateTimeText = data.formattedTimestampWithZone()
+        val dateLayout = StaticLayout.Builder.obtain(dateTimeText, 0, dateTimeText.length, metaPaint, textContentWidth)
+            .setAlignment(alignment).setMaxLines(1).build()
+
+        val noteLayout = if (data.showNote && data.customNote.isNotBlank()) {
+            val noteString = "Note: ${data.customNote}"
+            StaticLayout.Builder.obtain(noteString, 0, noteString.length, notePaint, textContentWidth)
+                .setAlignment(alignment).setMaxLines(1).build()
+        } else null
+
+        // Calculate heights
+        val badgeHeight = 22f * scale
+        var textTotalHeight = titleLayout.height + addressLayout.height + coordsLayout.height + altLayout.height + dateLayout.height + (5 * lineSpacing)
+        if (noteLayout != null) {
+            textTotalHeight += noteLayout.height + lineSpacing
+        }
+
+        val panelContentHeight = max(textTotalHeight, mapHeight)
+        val panelHeight = panelContentHeight + (padding * 2f) + badgeHeight
+
+        // Position from normalized coordinates
+        val centerX = width * data.normX
+        val bottomY = height * data.normY
+        val left = (centerX - (panelWidth / 2f)).coerceIn(8f * scale, width - panelWidth - 8f * scale)
+        val top = (bottomY - panelHeight).coerceIn(8f * scale, height - panelHeight - 8f * scale)
+        val panelRect = RectF(left, top, left + panelWidth, top + panelHeight)
+
+        // 1. Draw Panel Background
         val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            shader = LinearGradient(
-                0f, bannerTop, 0f, height,
-                intArrayOf(
-                    Color.argb(220, 15, 23, 42),  // Top: Slate 900 translucent
-                    Color.argb(245, 10, 15, 30)   // Bottom: Deep slate almost opaque
-                ),
-                null,
-                Shader.TileMode.CLAMP
-            )
+            color = data.backgroundColorHex.toInt()
+            alpha = (data.backgroundOpacity * 255).roundToInt().coerceIn(0, 255)
+            style = Paint.Style.FILL
         }
-        val bannerRect = RectF(0f, bannerTop, width, height)
-        canvas.drawRect(bannerRect, bgPaint)
+        canvas.drawRoundRect(panelRect, cornerRadius, cornerRadius, bgPaint)
 
-        // Subtle top accent line (Emerald green)
-        val topBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.argb(180, 16, 185, 129)
-            strokeWidth = 3f * scale
+        // 2. Draw Top Right Badge
+        val badgePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(220, 255, 255, 255)
+            textSize = 13f * scale
+            this.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textAlign = Paint.Align.RIGHT
         }
-        canvas.drawLine(0f, bannerTop, width, bannerTop, topBorderPaint)
+        canvas.drawText("GPS Map Camera", left + panelWidth - padding, top + (16f * scale), badgePaint)
 
         // 3. Draw Map Thumbnail
-        val mapTop = bannerTop + bannerPadding
-        val mapRect = RectF(bannerPadding, mapTop, bannerPadding + mapSize, mapTop + mapSize)
+        val contentTop = top + badgeHeight + (padding * 0.6f)
+        var textLeft = left + padding
 
-        // Map border / outline
-        val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.WHITE
-            style = Paint.Style.STROKE
-            strokeWidth = 2.5f * scale
+        if (showMap && mapThumbnail != null) {
+            val mapLeft = left + padding
+            val mapTop = contentTop + ((panelContentHeight - mapHeight) / 2f)
+            val mapRect = RectF(mapLeft, mapTop, mapLeft + mapWidth, mapTop + mapHeight)
+
+            // Clip map rounded corners
+            canvas.save()
+            val clipPath = Path().apply {
+                addRoundRect(mapRect, 8f * scale, 8f * scale, Path.Direction.CW)
+            }
+            canvas.clipPath(clipPath)
+            canvas.drawBitmap(mapThumbnail, null, mapRect, null)
+
+            // Red Location Pin
+            if (data.showMarker) {
+                val pinPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = accentColor
+                    style = Paint.Style.FILL
+                }
+                val pinX = mapLeft + (mapWidth / 2f)
+                val pinY = mapTop + (mapHeight / 2f)
+                canvas.drawCircle(pinX, pinY, 6f * scale, pinPaint)
+                pinPaint.color = Color.WHITE
+                canvas.drawCircle(pinX, pinY, 2.5f * scale, pinPaint)
+            }
+
+            canvas.restore()
+
+            // Border around map
+            val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.argb(120, 255, 255, 255)
+                style = Paint.Style.STROKE
+                strokeWidth = 1.5f * scale
+            }
+            canvas.drawRoundRect(mapRect, 8f * scale, 8f * scale, borderPaint)
+
+            textLeft = mapLeft + mapWidth + (padding * 0.8f)
         }
-        canvas.drawBitmap(mapThumbnail, null, mapRect, null)
-        canvas.drawRoundRect(mapRect, 8f * scale, 8f * scale, borderPaint)
 
-        // Micro branding tag under map
-        val tagPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.rgb(148, 163, 184)
-            textSize = 12f * scale
+        // 4. Draw Text Elements
+        var currentY = contentTop
+        fun drawLayout(layout: StaticLayout) {
+            canvas.save()
+            canvas.translate(textLeft, currentY)
+            layout.draw(canvas)
+            canvas.restore()
+            currentY += layout.height + lineSpacing
+        }
+
+        drawLayout(titleLayout)
+        drawLayout(addressLayout)
+        drawLayout(coordsLayout)
+        drawLayout(altLayout)
+        drawLayout(dateLayout)
+        noteLayout?.let { drawLayout(it) }
+    }
+
+    /**
+     * Compact layout banner.
+     */
+    private fun drawCompactPreset(
+        canvas: Canvas,
+        width: Float,
+        height: Float,
+        scale: Float,
+        data: GpsPhotoData,
+        mapThumbnail: Bitmap?
+    ) {
+        val panelWidth = (width * data.panelWidthPercent * data.scale).coerceAtMost(width * 0.98f)
+        val bannerHeight = 110f * scale
+        val padding = 14f * scale
+        val mapSize = bannerHeight - (padding * 2f)
+
+        val centerX = width * data.normX
+        val bottomY = height * data.normY
+        val left = (centerX - (panelWidth / 2f)).coerceIn(8f * scale, width - panelWidth - 8f * scale)
+        val top = (bottomY - bannerHeight).coerceIn(8f * scale, height - bannerHeight - 8f * scale)
+        val panelRect = RectF(left, top, left + panelWidth, top + bannerHeight)
+
+        val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = data.backgroundColorHex.toInt()
+            alpha = (data.backgroundOpacity * 255).roundToInt().coerceIn(0, 255)
+        }
+        canvas.drawRoundRect(panelRect, data.cornerRadiusDp * scale, data.cornerRadiusDp * scale, bgPaint)
+
+        var textLeft = left + padding
+        if (data.showMap && mapThumbnail != null) {
+            val mapRect = RectF(left + padding, top + padding, left + padding + mapSize, top + padding + mapSize)
+            canvas.drawBitmap(mapThumbnail, null, mapRect, null)
+            textLeft += mapSize + padding
+        }
+
+        val titlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = data.textColorHex.toInt()
+            textSize = 19f * scale
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+        val subPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = data.accentColorHex.toInt()
+            textSize = 15f * scale
+            typeface = Typeface.MONOSPACE
+        }
+        val datePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.rgb(203, 213, 225)
+            textSize = 14f * scale
+        }
+
+        canvas.drawText(data.locationHeading, textLeft, top + padding + (20f * scale), titlePaint)
+        canvas.drawText(data.formattedCoordinates(), textLeft, top + padding + (44f * scale), subPaint)
+        canvas.drawText(data.formattedTimestampWithZone(), textLeft, top + padding + (66f * scale), datePaint)
+    }
+
+    /**
+     * Modern Card layout with elevated landscape map and clean metadata grid.
+     */
+    private fun drawModernCardPreset(
+        canvas: Canvas,
+        width: Float,
+        height: Float,
+        scale: Float,
+        data: GpsPhotoData,
+        mapThumbnail: Bitmap?
+    ) {
+        val panelWidth = (width * data.panelWidthPercent * data.scale).coerceAtMost(width * 0.98f)
+        val padding = 16f * scale
+        val cardHeight = 260f * scale
+
+        val centerX = width * data.normX
+        val bottomY = height * data.normY
+        val left = (centerX - (panelWidth / 2f)).coerceIn(8f * scale, width - panelWidth - 8f * scale)
+        val top = (bottomY - cardHeight).coerceIn(8f * scale, height - cardHeight - 8f * scale)
+        val panelRect = RectF(left, top, left + panelWidth, top + cardHeight)
+
+        val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = data.backgroundColorHex.toInt()
+            alpha = (data.backgroundOpacity * 255).roundToInt().coerceIn(0, 255)
+        }
+        canvas.drawRoundRect(panelRect, data.cornerRadiusDp * scale, data.cornerRadiusDp * scale, bgPaint)
+
+        var currentY = top + padding + (18f * scale)
+        val titlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = data.textColorHex.toInt()
+            textSize = 21f * scale
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+        canvas.drawText(data.locationHeading, left + padding, currentY, titlePaint)
+        currentY += 12f * scale
+
+        if (data.showMap && mapThumbnail != null) {
+            val mapH = 90f * scale
+            val mapRect = RectF(left + padding, currentY, left + panelWidth - padding, currentY + mapH)
+            canvas.drawBitmap(mapThumbnail, null, mapRect, null)
+            currentY += mapH + (12f * scale)
+        }
+
+        val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.rgb(226, 232, 240)
+            textSize = 15f * scale
+        }
+        val coordPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = data.accentColorHex.toInt()
+            textSize = 15f * scale
+            typeface = Typeface.MONOSPACE
+        }
+
+        canvas.drawText(data.postalAddress, left + padding, currentY + (14f * scale), textPaint)
+        canvas.drawText(data.formattedCoordinates(), left + padding, currentY + (34f * scale), coordPaint)
+        canvas.drawText(data.formattedTimestampWithZone(), left + padding, currentY + (54f * scale), textPaint)
+    }
+
+    /**
+     * Minimal Watermark preset pill.
+     */
+    private fun drawMinimalWatermarkPreset(
+        canvas: Canvas,
+        width: Float,
+        height: Float,
+        scale: Float,
+        data: GpsPhotoData
+    ) {
+        val panelWidth = (width * data.panelWidthPercent * data.scale).coerceAtMost(width * 0.98f)
+        val pillHeight = 72f * scale
+
+        val centerX = width * data.normX
+        val bottomY = height * data.normY
+        val left = (centerX - (panelWidth / 2f)).coerceIn(8f * scale, width - panelWidth - 8f * scale)
+        val top = (bottomY - pillHeight).coerceIn(8f * scale, height - pillHeight - 8f * scale)
+        val panelRect = RectF(left, top, left + panelWidth, top + pillHeight)
+
+        val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = data.backgroundColorHex.toInt()
+            alpha = (data.backgroundOpacity * 255).roundToInt().coerceIn(0, 255)
+        }
+        canvas.drawRoundRect(panelRect, pillHeight / 2f, pillHeight / 2f, bgPaint)
+
+        val titlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = data.textColorHex.toInt()
+            textSize = 16f * scale
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
             textAlign = Paint.Align.CENTER
         }
-        canvas.drawText(
-            "GPS MAP CAMERA",
-            bannerPadding + (mapSize / 2),
-            mapTop + mapSize + (16f * scale),
-            tagPaint
-        )
-
-        // 4. Draw Metadata Text on the right
-        var currentY = bannerTop + bannerPadding + (24f * scale)
-
-        // Location Heading
-        canvas.drawText(data.locationHeading, contentLeft, currentY, titleTextPaint)
-        currentY += 12f * scale
-
-        // Postal Address (wrapped)
-        canvas.save()
-        canvas.translate(contentLeft, currentY)
-        addressLayout.draw(canvas)
-        canvas.restore()
-        currentY += addressHeight + (10f * scale)
-
-        // GPS Coordinates (Lat & Long)
-        val coordString = data.formattedCoordinates()
-        canvas.drawText(coordString, contentLeft, currentY, metaTextPaint)
-        currentY += 24f * scale
-
-        // Date, Time & Timezone
-        val timestampString = data.formattedTimestampWithZone()
-        canvas.drawText(timestampString, contentLeft, currentY, timeTextPaint)
-
-        // Custom Note
-        if (data.customNote.isNotBlank()) {
-            currentY += 22f * scale
-            canvas.drawText("Note: ${data.customNote}", contentLeft, currentY, noteTextPaint)
-        }
-    }
-
-    /**
-     * Modern Floating Card Layout:
-     * Rounded card floating slightly above the bottom with soft drop shadow.
-     */
-    private fun drawModernFloatingCard(
-        canvas: Canvas,
-        width: Float,
-        height: Float,
-        scale: Float,
-        data: GpsPhotoData,
-        mapThumbnail: Bitmap
-    ) {
-        val marginH = 32f * scale
-        val marginB = 32f * scale
-        val cardPadding = 20f * scale
-        val mapSize = 180f * scale
-
-        val cardLeft = marginH
-        val cardRight = width - marginH
-        val contentLeft = cardLeft + cardPadding + mapSize + (18f * scale)
-        val contentRight = cardRight - cardPadding
-
-        val availableWidth = (contentRight - contentLeft).toInt().coerceAtLeast(100)
-
-        val addressPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.rgb(241, 245, 249)
-            textSize = 18f * scale
-        }
-        val addressLayout = StaticLayout.Builder.obtain(
-            data.postalAddress, 0, data.postalAddress.length, addressPaint, availableWidth
-        ).setMaxLines(2).build()
-
-        val cardHeight = max(mapSize + (cardPadding * 2), 220f * scale + addressLayout.height)
-        val cardTop = height - marginB - cardHeight
-        val cardBottom = height - marginB
-        val cardRect = RectF(cardLeft, cardTop, cardRight, cardBottom)
-
-        // Card background (Dark Glass)
-        val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.argb(230, 15, 23, 42)
-        }
-        canvas.drawRoundRect(cardRect, 24f * scale, 24f * scale, bgPaint)
-
-        // Card border (Subtle Cyan accent)
-        val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.argb(100, 56, 189, 248)
-            style = Paint.Style.STROKE
-            strokeWidth = 2f * scale
-        }
-        canvas.drawRoundRect(cardRect, 24f * scale, 24f * scale, borderPaint)
-
-        // Map
-        val mapRect = RectF(
-            cardLeft + cardPadding,
-            cardTop + cardPadding,
-            cardLeft + cardPadding + mapSize,
-            cardTop + cardPadding + mapSize
-        )
-        canvas.drawBitmap(mapThumbnail, null, mapRect, null)
-        borderPaint.color = Color.argb(160, 255, 255, 255)
-        canvas.drawRoundRect(mapRect, 16f * scale, 16f * scale, borderPaint)
-
-        // Text
-        val titlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.WHITE
-            textSize = 24f * scale
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-        }
-        var textY = cardTop + cardPadding + (24f * scale)
-        canvas.drawText(data.locationHeading, contentLeft, textY, titlePaint)
-        textY += 10f * scale
-
-        canvas.save()
-        canvas.translate(contentLeft, textY)
-        addressLayout.draw(canvas)
-        canvas.restore()
-        textY += addressLayout.height + (12f * scale)
-
-        val coordPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.rgb(56, 189, 248) // Sky blue
-            textSize = 17f * scale
+        val subPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = data.accentColorHex.toInt()
+            textSize = 14f * scale
             typeface = Typeface.MONOSPACE
-        }
-        canvas.drawText(data.formattedCoordinates(), contentLeft, textY, coordPaint)
-        textY += 22f * scale
-
-        val timePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.rgb(203, 213, 225)
-            textSize = 16f * scale
-        }
-        canvas.drawText(data.formattedTimestampWithZone(), contentLeft, textY, timePaint)
-    }
-
-    /**
-     * Compact Minimal Banner:
-     * Streamlined watermark banner for minimalist photo aesthetics.
-     */
-    private fun drawCompactMinimalBanner(
-        canvas: Canvas,
-        width: Float,
-        height: Float,
-        scale: Float,
-        data: GpsPhotoData,
-        mapThumbnail: Bitmap
-    ) {
-        val bannerHeight = 120f * scale
-        val bannerTop = height - bannerHeight
-        val padding = 16f * scale
-        val mapSize = bannerHeight - (padding * 2)
-
-        val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.argb(190, 0, 0, 0)
-        }
-        canvas.drawRect(0f, bannerTop, width, height, bgPaint)
-
-        // Small map
-        val mapRect = RectF(padding, bannerTop + padding, padding + mapSize, bannerTop + padding + mapSize)
-        canvas.drawBitmap(mapThumbnail, null, mapRect, null)
-
-        val textLeft = padding + mapSize + (16f * scale)
-        val titlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.WHITE
-            textSize = 22f * scale
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-        }
-        val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.rgb(226, 232, 240)
-            textSize = 16f * scale
+            textAlign = Paint.Align.CENTER
         }
 
-        canvas.drawText(data.locationHeading, textLeft, bannerTop + padding + (22f * scale), titlePaint)
-        canvas.drawText(data.formattedCoordinates(), textLeft, bannerTop + padding + (48f * scale), textPaint)
-        canvas.drawText(data.formattedTimestampWithZone(), textLeft, bannerTop + padding + (72f * scale), textPaint)
+        val midX = left + (panelWidth / 2f)
+        canvas.drawText("${data.locationHeading} • ${data.formattedCoordinates()}", midX, top + (28f * scale), titlePaint)
+        canvas.drawText("${data.formattedTimestampWithZone()} • Alt ${data.altitudeMeters.toInt()}m", midX, top + (52f * scale), subPaint)
     }
 }

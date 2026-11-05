@@ -5,4 +5,6 @@
     <color name="accent">#FF9800</color>
     <color name="background_dark">#121212</color>
     <color name="surface_dark">#1E1E1E</color>
+    <color name="gps_red">#EA4335</color>
+    <color name="gps_red_dark">#B31412</color>
 </resources>

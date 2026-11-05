@@ -1,4 +1,42 @@
 <resources>
-    <string name="app_name">GPS Map Camera</string>
-    <string name="camera_overlay_description">GPS Map Camera Overlay</string>
+    <string name="app_name">GPS Photo Camera</string>
+    <string name="app_tagline">Geotag photos with location, map &amp; timestamps</string>
+    
+    <!-- Home Screen -->
+    <string name="upload_photo">Upload Photograph</string>
+    <string name="upload_photo_desc">Select a photo from your gallery to stamp GPS information</string>
+    <string name="start_editing">Start Editing</string>
+    <string name="recent_photos">Recent Generated Photos</string>
+    <string name="no_recent_photos">No stamped photos yet. Select a photo to begin!</string>
+    <string name="take_new_photo">Open Photo Picker</string>
+    
+    <!-- Editor Screen -->
+    <string name="photo_editor">GPS Photo Editor</string>
+    <string name="location_heading">Location Heading</string>
+    <string name="location_heading_hint">e.g. Pune, Maharashtra, India</string>
+    <string name="postal_address">Postal Address</string>
+    <string name="postal_address_hint">e.g. 124 Shivaji Nagar, FC Road, Pune 411005</string>
+    <string name="latitude">Latitude</string>
+    <string name="latitude_hint">e.g. 18.520430</string>
+    <string name="longitude">Longitude</string>
+    <string name="longitude_hint">e.g. 73.856744</string>
+    <string name="date">Date</string>
+    <string name="time">Time</string>
+    <string name="timezone">Timezone</string>
+    <string name="custom_note">Custom Note</string>
+    <string name="custom_note_hint">e.g. Site Survey / Inspection Report</string>
+    <string name="stamp_style">Stamp Style</string>
+    <string name="map_preview">Satellite Map Preview</string>
+    <string name="generate_preview">Generate GPS Stamp Preview</string>
+    <string name="use_current_location">Fetch Current Device GPS</string>
+    <string name="change_photo">Change Photo</string>
+    
+    <!-- Preview Screen -->
+    <string name="preview_title">Final Photograph Preview</string>
+    <string name="edit_information">Edit Information</string>
+    <string name="save_to_gallery">Save to Gallery</string>
+    <string name="share_image">Share Stamped Image</string>
+    <string name="saving_image">Rendering and saving to gallery…</string>
+    <string name="image_saved_success">Photograph successfully saved to Pictures/GPSMapCamera</string>
+    <string name="image_save_error">Failed to save image</string>
 </resources>

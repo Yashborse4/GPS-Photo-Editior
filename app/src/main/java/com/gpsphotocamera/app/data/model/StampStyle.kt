@@ -1,19 +1,30 @@
 package com.gpsphotocamera.app.data.model
 
 /**
- * Visual styling options for the generated GPS overlay stamp.
+ * Visual layout presets for the GPS Photo Camera live overlay and high-res export.
  */
 enum class StampStyle(val title: String, val description: String) {
     CLASSIC_BOTTOM(
-        title = "Classic Banner",
-        description = "Full-width bottom banner with map thumbnail, address, and coordinates"
-    ),
-    MODERN_CARD(
-        title = "Floating Card",
-        description = "Rounded translucent floating badge with map and compact metadata"
+        title = "GPS Map Camera Classic",
+        description = "Dark translucent card, satellite thumbnail, compass, and multi-line metadata reproducing reference photo"
     ),
     COMPACT_MINIMAL(
-        title = "Compact Minimal",
-        description = "Minimalist watermark banner with key GPS & timestamp"
-    )
+        title = "Compact GPS Overlay",
+        description = "Sleek low-profile bottom overlay with essential coordinates and timestamp"
+    ),
+    MODERN_CARD(
+        title = "Large Location Card",
+        description = "Spacious floating card with wide satellite map preview and comprehensive metadata"
+    ),
+    MINIMAL_WATERMARK(
+        title = "Minimal Location Overlay",
+        description = "Clean unobtrusive floating watermark pill for maximum photo visibility"
+    );
+
+    companion object {
+        val CLASSIC = CLASSIC_BOTTOM
+        val COMPACT = COMPACT_MINIMAL
+        val LARGE_CARD = MODERN_CARD
+        val MINIMAL = MINIMAL_WATERMARK
+    }
 }

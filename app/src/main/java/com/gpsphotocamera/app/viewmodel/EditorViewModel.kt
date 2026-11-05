@@ -168,7 +168,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
         viewModelScope.launch {
             try {
-                fusedLocationClient.lastLocation.addOnSuccessListener { location ->
+                fusedLocationClient.lastLocation.addOnSuccessListener { location: android.location.Location? ->
                     if (location != null) {
                         updateCoordinates(location.latitude, location.longitude)
                         reverseGeocode(context, location.latitude, location.longitude)
