@@ -42,7 +42,7 @@ fun AppNavHost(
                     navController.navigate(Screen.Editor.createRoute(uri.toString()))
                 },
                 onViewRecentPhoto = { uriString ->
-                    // Open recent photo directly in editor/preview
+                    // Open recent photo directly in editor
                     navController.navigate(Screen.Editor.createRoute(uriString))
                 }
             )
@@ -81,6 +81,11 @@ fun AppNavHost(
                 viewModel = previewViewModel,
                 photoData = photoData,
                 onNavigateBackToEdit = {
+                    navController.popBackStack()
+                },
+                onSelectNewPhoto = { newUri ->
+                    // Change photo while preserving current GPS location and stamp styling
+                    editorViewModel.changePhotoUri(newUri.toString(), preserveLocationSettings = true)
                     navController.popBackStack()
                 }
             )

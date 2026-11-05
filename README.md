@@ -100,6 +100,27 @@ Organized into clean, animated **Collapsible Sections** to prevent excessive scr
 
 ---
 
+## 📍 Saved Locations & Location Bookmarks
+
+Effortlessly save and reuse GPS locations across multiple photographs:
+- **1-Tap Save:** Bookmark the currently configured coordinates, heading, address, timezone, map style, and notes with a custom label (e.g., *"Pune Project Site"*, *"Field Office 2"*).
+- **Persistent Storage:** Saved locations persist offline via `SavedLocationsRepository` using lightweight JSON serialization.
+- **Quick Apply Chips:** Top saved locations appear as instant-tap chips directly on the editor screen for 1-tap switching.
+- **Saved Locations Dialog:** Browse, inspect coordinates, apply with one tap, or delete saved locations.
+- **Pre-Seeded Defaults:** Comes with realistic default reference locations (Pune, Mumbai, Delhi) for immediate demonstration.
+
+---
+
+## 📸 Easy Photo Selection & Rapid Batch Workflow
+
+Switch photos seamlessly without re-typing location information:
+- **Interactive Photo Card:** Tap directly anywhere on the photo thumbnail in the editor to pick a new photo from the device gallery.
+- **Location Setting Preservation:** When switching or changing photographs in the editor, your configured GPS coordinates, heading, address, and stamp styling are preserved automatically.
+- **"Stamp Next" Action:** Right from the final Preview Screen, tap **"Stamp Next"** to immediately pick the next photo from gallery and stamp it with the exact same location parameters in one step.
+- **Recent Photo Re-Editing:** 1-tap "Edit" button on any recently saved photo in the home feed to re-open and modify its stamp.
+
+---
+
 ## 📐 Layout Presets
 
 | Preset | Description | Visual Characteristics |

@@ -12,7 +12,9 @@ import androidx.lifecycle.viewModelScope
 import com.google.android.gms.location.LocationServices
 import com.gpsphotocamera.app.data.model.AppMapType
 import com.gpsphotocamera.app.data.model.GpsPhotoData
+import com.gpsphotocamera.app.data.model.SavedLocation
 import com.gpsphotocamera.app.data.model.StampStyle
+import com.gpsphotocamera.app.data.repository.SavedLocationsRepository
 import com.gpsphotocamera.app.domain.usecase.GenerateOverlayUseCase
 import com.gpsphotocamera.app.image.BitmapHolder
 import com.gpsphotocamera.app.image.BitmapUtils
@@ -43,6 +45,9 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     private val generateOverlayUseCase = GenerateOverlayUseCase(application.applicationContext)
     private val fusedLocationClient = LocationServices.getFusedLocationProviderClient(application.applicationContext)
+    private val savedLocationsRepository = SavedLocationsRepository(application.applicationContext)
+
+    val savedLocations: StateFlow<List<SavedLocation>> = savedLocationsRepository.savedLocations
 
     private val _photoData = MutableStateFlow(
         GpsPhotoData(
@@ -94,6 +99,80 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 timeInput.value = exif.timeString
                 _photoData.update { it.copy(timeString = exif.timeString) }
             }
+        }
+    }
+
+    /**
+     * Updates photograph while intelligently preserving the currently configured
+     * GPS coordinates, address, and stamp settings for batch/multi-photo workflows.
+     */
+    fun changePhotoUri(uriString: String, preserveLocationSettings: Boolean = true) {
+        if (uriString.isBlank()) return
+        _photoData.update { it.copy(originalImageUri = uriString) }
+
+        viewModelScope.launch {
+            val uri = Uri.parse(uriString)
+            val context = getApplication<Application>().applicationContext
+            val bitmap = BitmapUtils.decodeSampledBitmapFromUri(context, uri)
+            BitmapHolder.originalBitmap = bitmap
+
+            if (!preserveLocationSettings) {
+                val exif = ExifExtractor.extract(context, uri)
+                if (exif.latitude != null && exif.longitude != null) {
+                    updateCoordinates(exif.latitude, exif.longitude)
+                }
+                if (!exif.dateString.isNullOrBlank()) {
+                    dateInput.value = exif.dateString
+                    _photoData.update { it.copy(dateString = exif.dateString) }
+                }
+                if (!exif.timeString.isNullOrBlank()) {
+                    timeInput.value = exif.timeString
+                    _photoData.update { it.copy(timeString = exif.timeString) }
+                }
+            }
+        }
+    }
+
+    /**
+     * Bookmarks the current location parameters into persistent storage.
+     */
+    fun saveCurrentLocation(title: String) {
+        viewModelScope.launch {
+            val loc = SavedLocation(
+                title = title.ifBlank { locationHeadingInput.value.ifBlank { "Saved Location" } },
+                heading = locationHeadingInput.value,
+                address = postalAddressInput.value,
+                latitude = _photoData.value.latitude,
+                longitude = _photoData.value.longitude,
+                timezone = timezoneInput.value,
+                mapType = _photoData.value.mapType,
+                note = customNoteInput.value,
+                timestamp = System.currentTimeMillis()
+            )
+            savedLocationsRepository.saveLocation(loc)
+        }
+    }
+
+    /**
+     * Applies a saved/favorite location to the active photo editor state.
+     */
+    fun applySavedLocation(location: SavedLocation) {
+        updateCoordinates(location.latitude, location.longitude)
+        updateHeading(location.heading)
+        updatePostalAddress(location.address)
+        updateTimezone(location.timezone)
+        updateMapType(location.mapType)
+        if (location.note.isNotBlank()) {
+            updateNote(location.note)
+        }
+    }
+
+    /**
+     * Removes a saved location from persistent storage.
+     */
+    fun deleteSavedLocation(id: String) {
+        viewModelScope.launch {
+            savedLocationsRepository.deleteLocation(id)
         }
     }
 

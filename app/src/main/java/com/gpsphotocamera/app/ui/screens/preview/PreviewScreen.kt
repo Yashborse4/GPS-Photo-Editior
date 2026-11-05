@@ -1,5 +1,9 @@
 package com.gpsphotocamera.app.ui.screens.preview
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -16,6 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.SaveAlt
@@ -64,6 +69,7 @@ fun PreviewScreen(
     viewModel: PreviewViewModel,
     photoData: GpsPhotoData,
     onNavigateBackToEdit: () -> Unit,
+    onSelectNewPhoto: (Uri) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
@@ -72,6 +78,15 @@ fun PreviewScreen(
 
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
+
+    // Next photo picker (preserves current location for rapid batch stamping)
+    val selectNewPhotoLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            onSelectNewPhoto(uri)
+        }
+    }
 
     LaunchedEffect(saveState) {
         when (val state = saveState) {
@@ -165,20 +180,46 @@ fun PreviewScreen(
                         }
                     }
 
-                    // Secondary: Edit Information (Navigate Back)
-                    OutlinedButton(
-                        onClick = onNavigateBackToEdit,
-                        shape = RoundedCornerShape(14.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp)
+                    // Secondary Row: Edit Information & Stamp Another Photo
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Icon(imageVector = Icons.Default.Edit, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = stringResource(id = R.string.edit_information),
-                            style = MaterialTheme.typography.labelLarge
-                        )
+                        // Return to Editor
+                        OutlinedButton(
+                            onClick = onNavigateBackToEdit,
+                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp)
+                        ) {
+                            Icon(imageVector = Icons.Default.Edit, contentDescription = null)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = stringResource(id = R.string.edit_information),
+                                style = MaterialTheme.typography.labelLarge
+                            )
+                        }
+
+                        // Pick Next Photo with Same Location
+                        OutlinedButton(
+                            onClick = {
+                                selectNewPhotoLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            },
+                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp)
+                        ) {
+                            Icon(imageVector = Icons.Default.AddPhotoAlternate, contentDescription = null)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Stamp Next",
+                                style = MaterialTheme.typography.labelLarge
+                            )
+                        }
                     }
                 }
             }

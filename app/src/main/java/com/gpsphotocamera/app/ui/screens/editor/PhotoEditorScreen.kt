@@ -6,9 +6,11 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -22,19 +24,26 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Notes
+import androidx.compose.material.icons.filled.BookmarkAdd
+import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EditLocation
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.MyLocation
-import androidx.compose.material.icons.automirrored.filled.Notes
+import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -47,6 +56,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -66,10 +76,13 @@ import com.gpsphotocamera.app.ui.components.AppTimezoneDialog
 import com.gpsphotocamera.app.ui.components.AppTopBar
 import com.gpsphotocamera.app.ui.components.LoadingOverlay
 import com.gpsphotocamera.app.ui.components.RoundedTextField
+import com.gpsphotocamera.app.ui.components.SaveLocationDialog
+import com.gpsphotocamera.app.ui.components.SavedLocationsListDialog
 import com.gpsphotocamera.app.ui.components.SatelliteMapCard
 import com.gpsphotocamera.app.ui.components.StampStyleSelector
 import com.gpsphotocamera.app.utils.PermissionUtils
 import com.gpsphotocamera.app.viewmodel.EditorViewModel
+import kotlinx.coroutines.launch
 
 @Composable
 fun PhotoEditorScreen(
@@ -81,6 +94,7 @@ fun PhotoEditorScreen(
 ) {
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
+    val coroutineScope = rememberCoroutineScope()
 
     LaunchedEffect(initialPhotoUri) {
         if (initialPhotoUri.isNotBlank()) {
@@ -101,17 +115,24 @@ fun PhotoEditorScreen(
     val timezone by viewModel.timezoneInput.collectAsState()
     val note by viewModel.customNoteInput.collectAsState()
 
+    val savedLocations by viewModel.savedLocations.collectAsState()
+
     // Dialog display states
     var showDatePicker by remember { mutableStateOf(false) }
     var showTimePicker by remember { mutableStateOf(false) }
     var showTimezonePicker by remember { mutableStateOf(false) }
+    var showSaveLocationDialog by remember { mutableStateOf(false) }
+    var showSavedLocationsListDialog by remember { mutableStateOf(false) }
 
-    // Photo change picker
+    // Photo change picker (preserves existing GPS & address settings for easy multi-photo editing)
     val changePhotoPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri: Uri? ->
         if (uri != null) {
-            viewModel.setInitialPhotoUri(uri.toString())
+            viewModel.changePhotoUri(uri.toString(), preserveLocationSettings = true)
+            coroutineScope.launch {
+                snackbarHostState.showSnackbar("Photograph changed. Location and stamp settings preserved!")
+            }
         }
     }
 
@@ -192,6 +213,11 @@ fun PhotoEditorScreen(
                                 .height(220.dp)
                                 .clip(RoundedCornerShape(14.dp))
                                 .background(MaterialTheme.colorScheme.surface)
+                                .clickable {
+                                    changePhotoPicker.launch(
+                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                    )
+                                }
                         ) {
                             AsyncImage(
                                 model = ImageRequest.Builder(context)
@@ -204,13 +230,39 @@ fun PhotoEditorScreen(
                                 modifier = Modifier.fillMaxSize()
                             )
 
-                            // Change Photo Floating Pill
+                            // Quick tap hint (Top Start)
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopStart)
+                                    .padding(10.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.88f))
+                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.PhotoLibrary,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "Tap Photo to Change",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+
+                            // Change Photo Floating Pill (Bottom End)
                             Box(
                                 modifier = Modifier
                                     .align(Alignment.BottomEnd)
                                     .padding(10.dp)
                                     .clip(RoundedCornerShape(10.dp))
-                                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.9f))
+                                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
                                     .clickable {
                                         changePhotoPicker.launch(
                                             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
@@ -238,12 +290,94 @@ fun PhotoEditorScreen(
                     }
                 }
 
-                // 2. GPS Coordinates & Heading Section
-                Text(
-                    text = "GPS & Location Information",
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.primary
-                )
+                // 2. GPS Coordinates & Heading Section with Saved Location bookmarks
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "GPS & Location Information",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        FilledTonalButton(
+                            onClick = { showSavedLocationsListDialog = true },
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Bookmarks,
+                                contentDescription = null,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Saved (${savedLocations.size})",
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
+
+                        IconButton(
+                            onClick = { showSaveLocationDialog = true },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.BookmarkAdd,
+                                contentDescription = "Save this location",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                }
+
+                // Quick chips for top saved locations
+                if (savedLocations.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Quick apply:",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        savedLocations.take(4).forEach { loc ->
+                            FilterChip(
+                                selected = false,
+                                onClick = {
+                                    viewModel.applySavedLocation(loc)
+                                    coroutineScope.launch {
+                                        snackbarHostState.showSnackbar("Applied location: ${loc.title}")
+                                    }
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.Place,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(14.dp),
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                },
+                                label = {
+                                    Text(
+                                        text = loc.title,
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
+                                }
+                            )
+                        }
+                    }
+                }
 
                 // Location Heading
                 RoundedTextField(
@@ -312,7 +446,7 @@ fun PhotoEditorScreen(
                     Text(stringResource(id = R.string.use_current_location))
                 }
 
-                // 3. Satellite Map Preview
+                // 3. Map Preview (OpenStreetMap / Satellite / Standard / Terrain)
                 SatelliteMapCard(
                     latitude = photoData.latitude,
                     longitude = photoData.longitude,
@@ -425,6 +559,44 @@ fun PhotoEditorScreen(
                 AppTimezoneDialog(
                     onDismissRequest = { showTimezonePicker = false },
                     onTimezoneSelected = viewModel::updateTimezone
+                )
+            }
+
+            if (showSaveLocationDialog) {
+                SaveLocationDialog(
+                    initialTitle = heading.ifBlank { "Location ${date}" },
+                    heading = heading,
+                    address = address,
+                    coordinates = "${latitude}° N, ${longitude}° E",
+                    onDismissRequest = { showSaveLocationDialog = false },
+                    onConfirm = { title ->
+                        viewModel.saveCurrentLocation(title)
+                        showSaveLocationDialog = false
+                        coroutineScope.launch {
+                            snackbarHostState.showSnackbar("Location saved as '$title'!")
+                        }
+                    }
+                )
+            }
+
+            if (showSavedLocationsListDialog) {
+                SavedLocationsListDialog(
+                    savedLocations = savedLocations,
+                    onSelectLocation = { loc ->
+                        viewModel.applySavedLocation(loc)
+                        showSavedLocationsListDialog = false
+                        coroutineScope.launch {
+                            snackbarHostState.showSnackbar("Applied saved location: ${loc.title}")
+                        }
+                    },
+                    onDeleteLocation = { id ->
+                        viewModel.deleteSavedLocation(id)
+                    },
+                    onOpenSaveCurrentDialog = {
+                        showSavedLocationsListDialog = false
+                        showSaveLocationDialog = true
+                    },
+                    onDismissRequest = { showSavedLocationsListDialog = false }
                 )
             }
 
