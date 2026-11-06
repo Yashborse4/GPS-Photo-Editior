@@ -53,16 +53,18 @@ object MapSnapshotHelper {
         latitude: Double,
         longitude: Double,
         mapType: AppMapType = AppMapType.SATELLITE,
+        zoom: Int = 18,
         size: Int = 480,
         googleApiKey: String? = null
     ): Bitmap = withContext(Dispatchers.IO) {
+        val safeZoom = zoom.coerceIn(12, 19)
         // 1. Fetch live OpenStreetMap / Open Satellite tile grid (No API key needed)
         val osmBitmap = when (mapType) {
             AppMapType.OPEN_STREET_MAP, AppMapType.NORMAL -> {
                 fetchOpenStreetMapTileGrid(
                     latitude = latitude,
                     longitude = longitude,
-                    zoom = 16,
+                    zoom = safeZoom,
                     outputSize = size,
                     layerType = LayerType.OSM_STANDARD
                 )
@@ -71,7 +73,7 @@ object MapSnapshotHelper {
                 fetchOpenStreetMapTileGrid(
                     latitude = latitude,
                     longitude = longitude,
-                    zoom = 16,
+                    zoom = safeZoom,
                     outputSize = size,
                     layerType = LayerType.SATELLITE_IMAGERY
                 )
@@ -80,7 +82,7 @@ object MapSnapshotHelper {
                 fetchOpenStreetMapTileGrid(
                     latitude = latitude,
                     longitude = longitude,
-                    zoom = 16,
+                    zoom = safeZoom,
                     outputSize = size,
                     layerType = LayerType.TERRAIN_TOPO
                 )
@@ -93,7 +95,7 @@ object MapSnapshotHelper {
 
         // 2. If Google Maps API key is configured, fallback to Google Static Maps
         if (!googleApiKey.isNullOrBlank() && googleApiKey != "YOUR_GOOGLE_MAPS_API_KEY_HERE") {
-            val googleBitmap = fetchOnlineStaticMap(latitude, longitude, mapType, size, googleApiKey)
+            val googleBitmap = fetchOnlineStaticMap(latitude, longitude, mapType, safeZoom, size, googleApiKey)
             if (googleBitmap != null) {
                 return@withContext googleBitmap
             }
@@ -101,6 +103,35 @@ object MapSnapshotHelper {
 
         // 3. Resilient offline fallback: Vector-synthesized satellite/standard map
         synthesizeDetailedMapTile(latitude, longitude, mapType, size)
+    }
+
+    /**
+     * Fetches pure satellite or map imagery without any baked-in markers or watermarks,
+     * so that the resolution-independent OverlayRenderer can draw clean vector pins,
+     * radar cones, and branding overlays directly on the destination bitmap.
+     */
+    suspend fun fetchCleanSatelliteImagery(
+        latitude: Double,
+        longitude: Double,
+        mapType: AppMapType = AppMapType.SATELLITE,
+        zoom: Int = 18,
+        size: Int = 480
+    ): Bitmap = withContext(Dispatchers.IO) {
+        val safeZoom = zoom.coerceIn(12, 19)
+        val layer = when (mapType) {
+            AppMapType.SATELLITE, AppMapType.HYBRID -> LayerType.SATELLITE_IMAGERY
+            AppMapType.TERRAIN -> LayerType.TERRAIN_TOPO
+            AppMapType.OPEN_STREET_MAP, AppMapType.NORMAL -> LayerType.OSM_STANDARD
+        }
+        val cleanBitmap = fetchOpenStreetMapTileGrid(
+            latitude = latitude,
+            longitude = longitude,
+            zoom = safeZoom,
+            outputSize = size,
+            layerType = layer,
+            drawPinAndWatermark = false
+        )
+        cleanBitmap ?: synthesizeDetailedMapTile(latitude, longitude, mapType, size, drawPinAndWatermark = false)
     }
 
     enum class LayerType {
@@ -118,7 +149,8 @@ object MapSnapshotHelper {
         longitude: Double,
         zoom: Int = 16,
         outputSize: Int = 480,
-        layerType: LayerType = LayerType.OSM_STANDARD
+        layerType: LayerType = LayerType.OSM_STANDARD,
+        drawPinAndWatermark: Boolean = true
     ): Bitmap? = withContext(Dispatchers.IO) {
         try {
             val n = 1 shl zoom
@@ -202,16 +234,18 @@ object MapSnapshotHelper {
             )
             stitchedBitmap.recycle()
 
-            // Draw iconic red pin marker at exact center
-            drawMapPin(outputCanvas, outputSize / 2f, outputSize / 2f, outputSize * 0.16f)
+            if (drawPinAndWatermark) {
+                // Draw iconic red pin marker at exact center
+                drawMapPin(outputCanvas, outputSize / 2f, outputSize / 2f, outputSize * 0.16f)
 
-            // Draw attribution badge
-            val attributionText = when (layerType) {
-                LayerType.OSM_STANDARD -> "© OpenStreetMap contributors"
-                LayerType.SATELLITE_IMAGERY -> "© OpenStreetMap / Esri"
-                LayerType.TERRAIN_TOPO -> "© OpenTopoMap / OSM"
+                // Draw attribution badge
+                val attributionText = when (layerType) {
+                    LayerType.OSM_STANDARD -> "© OpenStreetMap contributors"
+                    LayerType.SATELLITE_IMAGERY -> "© OpenStreetMap / Esri"
+                    LayerType.TERRAIN_TOPO -> "© OpenTopoMap / OSM"
+                }
+                drawMapWatermark(outputCanvas, attributionText, outputSize)
             }
-            drawMapWatermark(outputCanvas, attributionText, outputSize)
 
             outputBitmap
         } catch (e: Exception) {
@@ -264,6 +298,7 @@ object MapSnapshotHelper {
         lat: Double,
         lng: Double,
         mapType: AppMapType,
+        zoom: Int,
         size: Int,
         apiKey: String
     ): Bitmap? {
@@ -275,7 +310,7 @@ object MapSnapshotHelper {
                 AppMapType.NORMAL, AppMapType.OPEN_STREET_MAP -> "roadmap"
             }
             val urlString = "https://maps.googleapis.com/maps/api/staticmap?" +
-                    "center=$lat,$lng&zoom=16&size=${size}x$size&scale=2&maptype=$typeParam" +
+                    "center=$lat,$lng&zoom=$zoom&size=${size}x$size&scale=2&maptype=$typeParam" +
                     "&markers=color:red%7C$lat,$lng&key=$apiKey"
 
             val url = URL(urlString)
@@ -305,7 +340,8 @@ object MapSnapshotHelper {
         latitude: Double,
         longitude: Double,
         mapType: AppMapType,
-        size: Int
+        size: Int,
+        drawPinAndWatermark: Boolean = true
     ): Bitmap {
         val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
@@ -422,18 +458,20 @@ object MapSnapshotHelper {
             canvas.drawLine(x, 0f, x, height, roadPaint)
         }
 
-        // 3. Red Location Marker Pin
-        val markerX = width / 2f
-        val markerY = height / 2f
-        drawMapPin(canvas, markerX, markerY, width * 0.16f)
+        if (drawPinAndWatermark) {
+            // 3. Red Location Marker Pin
+            val markerX = width / 2f
+            val markerY = height / 2f
+            drawMapPin(canvas, markerX, markerY, width * 0.16f)
 
-        // 4. Subtle Compass Rose (Top Right)
-        val compassRadius = width * 0.09f
-        drawCompassRose(canvas, width - compassRadius - (width * 0.04f), compassRadius + (width * 0.04f), compassRadius)
+            // 4. Subtle Compass Rose (Top Right)
+            val compassRadius = width * 0.09f
+            drawCompassRose(canvas, width - compassRadius - (width * 0.04f), compassRadius + (width * 0.04f), compassRadius)
 
-        // 5. Watermark attribution
-        val attribution = if (mapType == AppMapType.OPEN_STREET_MAP) "© OpenStreetMap" else "GPS Map Camera"
-        drawMapWatermark(canvas, attribution, size)
+            // 5. Watermark attribution
+            val attribution = if (mapType == AppMapType.OPEN_STREET_MAP) "© OpenStreetMap" else "GPS Map Camera"
+            drawMapWatermark(canvas, attribution, size)
+        }
 
         return bitmap
     }

@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Today
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -80,6 +81,7 @@ import com.gpsphotocamera.app.ui.components.SaveLocationDialog
 import com.gpsphotocamera.app.ui.components.SavedLocationsListDialog
 import com.gpsphotocamera.app.ui.components.SatelliteMapCard
 import com.gpsphotocamera.app.ui.components.StampStyleSelector
+import com.gpsphotocamera.app.utils.AppDateTimeFormatter
 import com.gpsphotocamera.app.utils.PermissionUtils
 import com.gpsphotocamera.app.viewmodel.EditorViewModel
 import kotlinx.coroutines.launch
@@ -110,6 +112,7 @@ fun PhotoEditorScreen(
     val address by viewModel.postalAddressInput.collectAsState()
     val latitude by viewModel.latitudeInput.collectAsState()
     val longitude by viewModel.longitudeInput.collectAsState()
+    val dayOfWeek by viewModel.dayOfWeekInput.collectAsState()
     val date by viewModel.dateInput.collectAsState()
     val time by viewModel.timeInput.collectAsState()
     val timezone by viewModel.timezoneInput.collectAsState()
@@ -446,12 +449,16 @@ fun PhotoEditorScreen(
                     Text(stringResource(id = R.string.use_current_location))
                 }
 
-                // 3. Map Preview (OpenStreetMap / Satellite / Standard / Terrain)
+                // 3. Map Preview (Satellite / OpenStreetMap / Custom Map Image)
                 SatelliteMapCard(
                     latitude = photoData.latitude,
                     longitude = photoData.longitude,
                     selectedMapType = photoData.mapType,
-                    onMapTypeChanged = viewModel::updateMapType
+                    onMapTypeChanged = viewModel::updateMapType,
+                    mapZoom = photoData.mapZoom,
+                    onMapZoomChanged = viewModel::updateMapZoom,
+                    customMapImageUri = photoData.customMapImageUri,
+                    onCustomMapImageSelected = viewModel::updateCustomMapImageUri
                 )
 
                 // 4. Date, Time & Timezone Section
@@ -465,6 +472,16 @@ fun PhotoEditorScreen(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
+                    // Day of Week
+                    RoundedTextField(
+                        value = dayOfWeek,
+                        onValueChange = viewModel::updateDayOfWeek,
+                        label = stringResource(id = R.string.day_of_week),
+                        placeholder = stringResource(id = R.string.day_of_week_hint),
+                        leadingIcon = Icons.Default.Today,
+                        modifier = Modifier.weight(1f)
+                    )
+
                     // Date
                     RoundedTextField(
                         value = date,
@@ -481,7 +498,12 @@ fun PhotoEditorScreen(
                         },
                         modifier = Modifier.weight(1f)
                     )
+                }
 
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
                     // Time
                     RoundedTextField(
                         value = time,
@@ -498,23 +520,24 @@ fun PhotoEditorScreen(
                         },
                         modifier = Modifier.weight(1f)
                     )
-                }
 
-                // Timezone
-                RoundedTextField(
-                    value = timezone,
-                    onValueChange = viewModel::updateTimezone,
-                    label = stringResource(id = R.string.timezone),
-                    leadingIcon = Icons.Default.Public,
-                    trailingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Public,
-                            contentDescription = "Select timezone",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.clickable { showTimezonePicker = true }
-                        )
-                    }
-                )
+                    // Timezone
+                    RoundedTextField(
+                        value = timezone,
+                        onValueChange = viewModel::updateTimezone,
+                        label = stringResource(id = R.string.timezone),
+                        leadingIcon = Icons.Default.Public,
+                        trailingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Public,
+                                contentDescription = "Select timezone",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.clickable { showTimezonePicker = true }
+                            )
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
 
                 // 5. Custom Note
                 Text(
@@ -543,6 +566,7 @@ fun PhotoEditorScreen(
             // Dialogs
             if (showDatePicker) {
                 AppDatePickerDialog(
+                    initialDateMillis = AppDateTimeFormatter.parseDateToMillis(date),
                     onDismissRequest = { showDatePicker = false },
                     onDateSelected = viewModel::updateDate
                 )

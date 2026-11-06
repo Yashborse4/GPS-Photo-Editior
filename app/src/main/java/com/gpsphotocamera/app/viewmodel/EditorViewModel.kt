@@ -69,6 +69,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     val longitudeInput = MutableStateFlow("73.835936")
     val locationHeadingInput = MutableStateFlow("Pune, Maharashtra, India")
     val postalAddressInput = MutableStateFlow("870/7, Bhandarkar Rd, Near Hdfc Bank, Shreeman Society, Deccan Gymkhana, Pune, Maharashtra 411004, India")
+    val dayOfWeekInput = MutableStateFlow("Monday")
     val dateInput = MutableStateFlow("19/10/2026")
     val timeInput = MutableStateFlow("12:18 PM")
     val timezoneInput = MutableStateFlow("GMT +05:30")
@@ -99,7 +100,9 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
             }
             if (!exif.dateString.isNullOrBlank()) {
                 dateInput.value = exif.dateString
-                _photoData.update { it.copy(dateString = exif.dateString) }
+                val computedDay = AppDateTimeFormatter.calculateDayOfWeek(exif.dateString) ?: "Monday"
+                dayOfWeekInput.value = computedDay
+                _photoData.update { it.copy(dateString = exif.dateString, dayOfWeek = computedDay) }
             }
             if (!exif.timeString.isNullOrBlank()) {
                 timeInput.value = exif.timeString
@@ -129,7 +132,9 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 }
                 if (!exif.dateString.isNullOrBlank()) {
                     dateInput.value = exif.dateString
-                    _photoData.update { it.copy(dateString = exif.dateString) }
+                    val computedDay = AppDateTimeFormatter.calculateDayOfWeek(exif.dateString) ?: "Monday"
+                    dayOfWeekInput.value = computedDay
+                    _photoData.update { it.copy(dateString = exif.dateString, dayOfWeek = computedDay) }
                 }
                 if (!exif.timeString.isNullOrBlank()) {
                     timeInput.value = exif.timeString
@@ -214,9 +219,20 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         _photoData.update { it.copy(latitude = lat, longitude = lng) }
     }
 
+    fun updateDayOfWeek(value: String) {
+        dayOfWeekInput.value = value
+        _photoData.update { it.copy(dayOfWeek = value) }
+    }
+
     fun updateDate(value: String) {
         dateInput.value = value
-        _photoData.update { it.copy(dateString = value) }
+        val computedDay = AppDateTimeFormatter.calculateDayOfWeek(value)
+        if (computedDay != null) {
+            dayOfWeekInput.value = computedDay
+            _photoData.update { it.copy(dateString = value, dayOfWeek = computedDay) }
+        } else {
+            _photoData.update { it.copy(dateString = value) }
+        }
     }
 
     fun updateTime(value: String) {
@@ -240,6 +256,14 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     fun updateMapType(type: AppMapType) {
         _photoData.update { it.copy(mapType = type) }
+    }
+
+    fun updateCustomMapImageUri(uri: String?) {
+        _photoData.update { it.copy(customMapImageUri = uri) }
+    }
+
+    fun updateMapZoom(zoom: Int) {
+        _photoData.update { it.copy(mapZoom = zoom.coerceIn(12, 19)) }
     }
 
     /**

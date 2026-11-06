@@ -31,6 +31,11 @@ object CanvasOverlayRenderer {
         data: GpsPhotoData,
         mapThumbnail: Bitmap?
     ): Bitmap = withContext(Dispatchers.Default) {
+        if (data.stampStyle == StampStyle.CLASSIC_BOTTOM) {
+            val config = com.gpsphotocamera.app.engine.OverlayConfig.fromGpsPhotoData(data, mapThumbnail)
+            return@withContext com.gpsphotocamera.app.engine.OverlayRenderer.renderOverlay(baseBitmap, config)
+        }
+
         val outputBitmap = baseBitmap.copy(Bitmap.Config.ARGB_8888, true)
         val canvas = Canvas(outputBitmap)
 
@@ -39,7 +44,7 @@ object CanvasOverlayRenderer {
 
         when (data.stampStyle) {
             StampStyle.CLASSIC_BOTTOM -> {
-                drawClassicPreset(canvas, imageWidth, imageHeight, data, mapThumbnail)
+                // Handled above
             }
             StampStyle.COMPACT_MINIMAL -> {
                 drawCompactPreset(canvas, imageWidth, imageHeight, data, mapThumbnail)

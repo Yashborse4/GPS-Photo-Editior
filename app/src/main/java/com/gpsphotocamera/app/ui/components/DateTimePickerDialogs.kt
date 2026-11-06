@@ -28,11 +28,12 @@ import java.util.Calendar
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppDatePickerDialog(
+    initialDateMillis: Long? = null,
     onDismissRequest: () -> Unit,
     onDateSelected: (String) -> Unit
 ) {
     val datePickerState = rememberDatePickerState(
-        initialSelectedDateMillis = System.currentTimeMillis()
+        initialSelectedDateMillis = initialDateMillis ?: System.currentTimeMillis()
     )
 
     DatePickerDialog(

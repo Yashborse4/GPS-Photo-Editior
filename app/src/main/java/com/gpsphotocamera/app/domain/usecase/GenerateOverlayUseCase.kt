@@ -4,8 +4,9 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
 import com.gpsphotocamera.app.data.model.GpsPhotoData
+import com.gpsphotocamera.app.engine.OverlayConfig
+import com.gpsphotocamera.app.engine.OverlayRenderer
 import com.gpsphotocamera.app.image.BitmapUtils
-import com.gpsphotocamera.app.image.CanvasOverlayRenderer
 import com.gpsphotocamera.app.maps.MapSnapshotHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -13,8 +14,8 @@ import kotlinx.coroutines.withContext
 /**
  * UseCase coordinating:
  * 1. Base photo retrieval / downsampling
- * 2. Satellite map thumbnail generation
- * 3. 2D Canvas overlay rendering
+ * 2. Satellite map thumbnail generation (or user-uploaded satellite image)
+ * 3. Canonical OverlayRenderer Canvas overlay rendering
  */
 class GenerateOverlayUseCase(private val context: Context) {
 
@@ -29,19 +30,29 @@ class GenerateOverlayUseCase(private val context: Context) {
                 BitmapUtils.decodeSampledBitmapFromUri(context, uri)
             } ?: return@withContext Result.failure(Exception("Could not load original photograph"))
 
-            // 2. Generate Map snapshot / vector tile
-            val mapThumbnail = MapSnapshotHelper.generateMapThumbnail(
-                latitude = photoData.latitude,
-                longitude = photoData.longitude,
-                mapType = photoData.mapType,
-                size = 480
-            )
+            // 2. Obtain Satellite map thumbnail (user-uploaded satellite image or ArcGIS World Imagery)
+            val satelliteBitmap = if (photoData.showMap) {
+                if (!photoData.customMapImageUri.isNullOrBlank()) {
+                    val customUri = Uri.parse(photoData.customMapImageUri)
+                    BitmapUtils.decodeSampledBitmapFromUri(context, customUri, 480)
+                } else {
+                    MapSnapshotHelper.fetchCleanSatelliteImagery(
+                        latitude = photoData.latitude,
+                        longitude = photoData.longitude,
+                        mapType = photoData.mapType,
+                        zoom = photoData.mapZoom,
+                        size = 480
+                    )
+                }
+            } else null
 
-            // 3. Render complete overlay on canvas
-            val finalBitmap = CanvasOverlayRenderer.renderOverlay(
-                baseBitmap = baseBitmap,
-                data = photoData,
-                mapThumbnail = mapThumbnail
+            // 3. Build OverlayConfig from GpsPhotoData
+            val config = OverlayConfig.fromGpsPhotoData(photoData, satelliteBitmap)
+
+            // 4. Render overlay with canonical OverlayRenderer
+            val finalBitmap = OverlayRenderer.renderOverlay(
+                sourceBitmap = baseBitmap,
+                config = config
             )
 
             Result.success(finalBitmap)

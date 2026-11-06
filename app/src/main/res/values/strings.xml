@@ -20,6 +20,8 @@
     <string name="latitude_hint">e.g. 18.520430</string>
     <string name="longitude">Longitude</string>
     <string name="longitude_hint">e.g. 73.856744</string>
+    <string name="day_of_week">Day of Week</string>
+    <string name="day_of_week_hint">e.g. Monday</string>
     <string name="date">Date</string>
     <string name="time">Time</string>
     <string name="timezone">Timezone</string>

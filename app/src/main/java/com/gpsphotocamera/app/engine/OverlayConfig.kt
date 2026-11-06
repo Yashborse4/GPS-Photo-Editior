@@ -1,8 +1,10 @@
 package com.gpsphotocamera.app.engine
 
 import android.graphics.Bitmap
-import android.graphics.Color
+import android.graphics.RectF
 import android.graphics.Typeface
+import com.gpsphotocamera.app.data.model.AppMapType
+import com.gpsphotocamera.app.data.model.GpsPhotoData
 import java.io.Serializable
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -10,15 +12,33 @@ import java.util.Locale
 import java.util.TimeZone
 
 /**
+ * Geometric layout bounds and typography sizes computed for a specific target image resolution.
+ */
+data class OverlayLayoutBounds(
+    val mapRect: RectF,
+    val panelRect: RectF,
+    val badgeRect: RectF,
+    val cornerRadius: Float,
+    val badgeCornerRadius: Float,
+    val headingTextSize: Float,
+    val bodyTextSize: Float,
+    val badgeTextSize: Float,
+    val paddingLeft: Float,
+    val paddingRight: Float,
+    val paddingTop: Float,
+    val paddingBottom: Float,
+    val linePitch: Float
+) : Serializable
+
+/**
  * Root configuration container for the High-Precision GPS Photograph Overlay Rendering Engine.
  *
- * Every visual parameter is completely configurable, while default values are mathematically
- * calibrated to match the reference GPS Map Camera photograph proportions:
- * - Base reference resolution: 1086 x 1448
- * - Map card: Left aligned, 283 x 283 px square, rounded corners (16px)
- * - Text panel: Right side, 691 x 283 px, translucent black (62% opacity), rounded corners (16px)
- * - Badge: Top-right "GPS Map Camera" with camera icon (218 x 75 px)
- * - Typography: Roboto sans-serif, bold heading, regular address/coords/date/note
+ * Implements resolution-independent, normalized parameters with mathematically calibrated
+ * geometry matching the GPS Map Camera reference photograph:
+ * - Independent Satellite Map thumbnail on bottom-left with rounded corners.
+ * - Independent translucent black Information Panel on bottom-right (64-67% width on portrait).
+ * - Independent small GPS Map Camera branding badge sitting atop the information panel.
+ * - Full support for Portrait, Landscape, and Square image aspect ratios without distortion.
  */
 data class OverlayConfig(
     val panel: PanelConfig = PanelConfig(),
@@ -31,7 +51,146 @@ data class OverlayConfig(
     val output: OutputConfig = OutputConfig()
 ) : Serializable {
 
+    /**
+     * Dynamically computes exact layout bounds, margins, padding, and typography scaling
+     * for any target image width and height (portrait, landscape, or square).
+     */
+    fun computeLayout(imageWidth: Int, imageHeight: Int): OverlayLayoutBounds {
+        val W = imageWidth.toFloat()
+        val H = imageHeight.toFloat()
+
+        val mapWidth: Float
+        val cardHeight: Float
+        val gap: Float
+        val panelWidth: Float
+        val leftMargin: Float
+        val bottomMargin: Float
+
+        if (W <= H) {
+            // Portrait or Square aspect ratio
+            val aspect = W / H
+            if (aspect <= 0.75f) {
+                // Standard smartphone portrait (9:16, 3:4, etc.)
+                // Information panel uses ~65% of photograph width (strictly in range 64–67%)
+                panelWidth = W * 0.65f
+                mapWidth = W * 0.26f
+                gap = W * 0.02f
+            } else {
+                // Near-square or 1:1 square
+                panelWidth = W * 0.62f
+                mapWidth = W * 0.24f
+                gap = W * 0.02f
+            }
+            cardHeight = mapWidth // Square map thumbnail; panel height matches map height
+            val totalWidth = mapWidth + gap + panelWidth
+            leftMargin = (W - totalWidth) / 2f
+            bottomMargin = H * 0.02f
+        } else {
+            // Landscape aspect ratio (e.g. 4:3, 16:9, matching the 1024x768 reference photo)
+            // Height is the bounding constraint to prevent the card from dominating the frame
+            cardHeight = H * 0.258f // Exactly 198px on 768h
+            mapWidth = cardHeight
+            gap = cardHeight * (17f / 198f) // Exactly 17px
+            panelWidth = cardHeight * (596f / 198f) // Exactly 596px
+            val totalWidth = mapWidth + gap + panelWidth
+            leftMargin = (W - totalWidth) / 2f // Symmetrically centered (106-107px)
+            bottomMargin = H * (16f / 768f) // Exactly 16px on 768h
+        }
+
+        val cardBottom = H - bottomMargin
+        val cardTop = cardBottom - cardHeight
+
+        val mapRect = RectF(leftMargin, cardTop, leftMargin + mapWidth, cardBottom)
+        val panelLeft = leftMargin + mapWidth + gap
+        val panelRect = RectF(panelLeft, cardTop, panelLeft + panelWidth, cardBottom)
+
+        // Branding badge sits atop the right side of the information panel
+        val badgeWidth = cardHeight * (158f / 198f)
+        val badgeHeight = cardHeight * (34f / 198f)
+        val badgeRight = panelRect.right
+        val badgeBottom = cardTop + (1.5f * (cardHeight / 198f)) // 1.5px overlap for clean union
+        val badgeLeft = badgeRight - badgeWidth
+        val badgeTop = badgeBottom - badgeHeight
+        val badgeRect = RectF(badgeLeft, badgeTop, badgeRight, badgeBottom)
+
+        val cornerRadius = cardHeight * (16f / 198f)
+        val badgeCornerRadius = cardHeight * (9f / 198f)
+
+        // Calibrated typography sizing matching the reference photograph
+        val mult = typography.fontSizeMultiplier
+        val headingTextSize = cardHeight * (30.5f / 198f) * mult
+        val bodyTextSize = cardHeight * (20.5f / 198f) * mult
+        val badgeTextSize = cardHeight * (13.5f / 198f) * mult
+
+        val paddingLeft = cardHeight * (16f / 198f)
+        val paddingRight = cardHeight * (16f / 198f)
+        val paddingTop = cardHeight * (17f / 198f)
+        val paddingBottom = cardHeight * (15f / 198f)
+        val linePitch = cardHeight * (24f / 198f)
+
+        return OverlayLayoutBounds(
+            mapRect = mapRect,
+            panelRect = panelRect,
+            badgeRect = badgeRect,
+            cornerRadius = cornerRadius,
+            badgeCornerRadius = badgeCornerRadius,
+            headingTextSize = headingTextSize,
+            bodyTextSize = bodyTextSize,
+            badgeTextSize = badgeTextSize,
+            paddingLeft = paddingLeft,
+            paddingRight = paddingRight,
+            paddingTop = paddingTop,
+            paddingBottom = paddingBottom,
+            linePitch = linePitch
+        )
+    }
+
     companion object {
+        /**
+         * Converts domain [GpsPhotoData] into [OverlayConfig] with optional satellite imagery bitmap.
+         */
+        fun fromGpsPhotoData(data: GpsPhotoData, satelliteBitmap: Bitmap? = null): OverlayConfig {
+            val bgAlpha = (data.backgroundOpacity * 255).toInt().coerceIn(0, 255)
+            val bgRgb = (data.backgroundColorHex.toInt()) and 0x00FFFFFF
+            val panelBgColor = (bgAlpha shl 24) or bgRgb
+
+            return OverlayConfig(
+                panel = PanelConfig(
+                    backgroundColor = panelBgColor
+                ),
+                map = MapConfig(
+                    enabled = data.showMap,
+                    satelliteBitmap = satelliteBitmap,
+                    mapType = data.mapType,
+                    showMarker = data.showMarker,
+                    showRadarBeam = data.showCompass
+                ),
+                location = LocationData(
+                    heading = data.locationHeading,
+                    latitude = data.latitude,
+                    longitude = data.longitude,
+                    postalAddress = data.postalAddress
+                ),
+                dateTime = DateTimeConfig(
+                    day = data.dayOfWeek,
+                    date = data.dateString,
+                    time = data.timeString,
+                    timezone = data.timezone
+                ),
+                note = NoteConfig(
+                    visible = data.showNote,
+                    text = data.customNote
+                ),
+                badge = BadgeConfig(
+                    visible = true,
+                    text = "GPS Map Camera"
+                ),
+                typography = TypographyConfig(
+                    fontSizeMultiplier = data.fontSizeMultiplier
+                )
+            )
+        }
+
         /**
          * Creates an [OverlayConfig] matching the exact layout, text, coordinates,
          * date/time, and visual style of the reference GPS Map Camera photograph.
@@ -46,11 +205,7 @@ data class OverlayConfig(
                     panelWidthPercent = 0.63628f,         // 691px / 1086px
                     panelHeightPercent = 0.19544f,        // 283px / 1448px
                     cornerRadiusPercent = 0.01473f,       // 16px / 1086px
-                    backgroundColor = 0x9E0C0C0C.toInt(), // ~62% translucent black (#9E0C0C0C)
-                    paddingLeftPercent = 0.02302f,        // 25px / 1086px
-                    paddingRightPercent = 0.02302f,       // 25px / 1086px
-                    paddingTopPercent = 0.02279f,         // 33px / 1448px
-                    paddingBottomPercent = 0.01796f       // 26px / 1448px
+                    backgroundColor = 0x9E0C0C0C.toInt()
                 ),
                 map = MapConfig(
                     enabled = true,
@@ -59,16 +214,16 @@ data class OverlayConfig(
                     cornerRadiusPercent = 0.01473f,       // 16px / 1086px
                     showMarker = true,
                     markerColor = 0xFFEA4335.toInt(),
-                    markerCenterColor = 0xFFB31412.toInt(),
-                    showGoogleLogo = true
+                    markerCenterColor = 0xFFFFFFFF.toInt(),
+                    markerWidthPercent = 0.0295f,
+                    markerHeightPercent = 0.0506f,
+                    showGoogleLogo = true,
+                    showRadarBeam = true
                 ),
                 location = LocationData(
                     heading = "Pune, Maharashtra, India",
                     flagEmoji = "🇮🇳",
-                    addressLines = listOf(
-                        "851, Near Yes Bank Corner, Deccan",
-                        "Gymkhana, Pune, Maharashtra 411004, India"
-                    ),
+                    postalAddress = "851, Near Yes Bank Corner, Deccan Gymkhana, Pune, Maharashtra 411004, India",
                     latitude = 18.518667,
                     longitude = 73.833756,
                     decimalPrecision = 6
@@ -93,12 +248,11 @@ data class OverlayConfig(
                     backgroundColor = 0x9E0C0C0C.toInt()
                 ),
                 typography = TypographyConfig(
-                    headingFontSizePercent = 0.04236f,    // 46px / 1086px
-                    bodyFontSizePercent = 0.02670f,       // 29px / 1086px
-                    badgeFontSizePercent = 0.01842f,      // 20px / 1086px
+                    headingFontSizePercent = 0.04236f,
+                    bodyFontSizePercent = 0.02670f,
+                    badgeFontSizePercent = 0.01842f,
                     headingColor = 0xFFFFFFFF.toInt(),
-                    bodyColor = 0xFFFFFFFF.toInt(),
-                    lineSpacingMultiplier = 1.25f
+                    bodyColor = 0xFFFFFFFF.toInt()
                 )
             )
         }
@@ -145,18 +299,18 @@ enum class PanelPosition {
  */
 data class PanelConfig(
     val position: PanelPosition = PanelPosition.BOTTOM,
-    val horizontalMarginPercent: Float = 0.04144f,
-    val bottomMarginPercent: Float = 0.01520f,
-    val topMarginPercent: Float = 0.01520f,
-    val gapBetweenMapAndPanelPercent: Float = 0.02026f,
-    val panelWidthPercent: Float = 0.63628f,
-    val panelHeightPercent: Float = 0.19544f,
-    val cornerRadiusPercent: Float = 0.01473f,
-    val backgroundColor: Int = 0x9E0C0C0C.toInt(),
-    val paddingLeftPercent: Float = 0.02302f,
-    val paddingRightPercent: Float = 0.02302f,
-    val paddingTopPercent: Float = 0.02279f,
-    val paddingBottomPercent: Float = 0.01796f,
+    val horizontalMarginPercent: Float = 0.10449f,
+    val bottomMarginPercent: Float = 0.02083f,
+    val topMarginPercent: Float = 0.02083f,
+    val gapBetweenMapAndPanelPercent: Float = 0.01660f,
+    val panelWidthPercent: Float = 0.58203f,
+    val panelHeightPercent: Float = 0.25781f,
+    val cornerRadiusPercent: Float = 0.01563f,
+    val backgroundColor: Int = 0xCC202225.toInt(),
+    val paddingLeftPercent: Float = 0.01563f,
+    val paddingRightPercent: Float = 0.01563f,
+    val paddingTopPercent: Float = 0.01660f,
+    val paddingBottomPercent: Float = 0.01465f,
     val customCenterXPercent: Float = 0.5f,
     val customCenterYPercent: Float = 0.85f
 ) : Serializable {
@@ -176,16 +330,18 @@ data class PanelConfig(
  */
 data class MapConfig(
     val enabled: Boolean = true,
-    val widthPercent: Float = 0.26059f,
-    val heightPercent: Float = 0.26059f,
-    val cornerRadiusPercent: Float = 0.01473f,
+    val widthPercent: Float = 0.19336f,
+    val heightPercent: Float = 0.25781f,
+    val cornerRadiusPercent: Float = 0.01563f,
     @Transient val satelliteBitmap: Bitmap? = null,
+    val mapType: AppMapType = AppMapType.SATELLITE,
     val showMarker: Boolean = true,
-    val markerColor: Int = 0xFFEA4335.toInt(),
-    val markerCenterColor: Int = 0xFFB31412.toInt(),
+    val markerColor: Int = 0xFFE53935.toInt(),
+    val markerCenterColor: Int = 0xFFFFFFFF.toInt(),
     val markerWidthPercent: Float = 0.0295f,
     val markerHeightPercent: Float = 0.0506f,
-    val showGoogleLogo: Boolean = true
+    val showGoogleLogo: Boolean = true,
+    val showRadarBeam: Boolean = true
 ) : Serializable
 
 /**
@@ -194,12 +350,10 @@ data class MapConfig(
 data class LocationData(
     val heading: String = "Pune, Maharashtra, India",
     val flagEmoji: String = "🇮🇳",
-    val addressLines: List<String> = listOf(
-        "851, Near Yes Bank Corner, Deccan",
-        "Gymkhana, Pune, Maharashtra 411004, India"
-    ),
-    val latitude: Double = 18.518667,
-    val longitude: Double = 73.833756,
+    val postalAddress: String = "870/7, Bhandarkar Rd, Near Hdfc Bank, Shreeman Society, Deccan Gymkhana, Pune, Maharashtra 411004, India",
+    val addressLines: List<String> = emptyList(),
+    val latitude: Double = 18.518084,
+    val longitude: Double = 73.835936,
     val decimalPrecision: Int = 6,
     val customCoordinatesString: String? = null
 ) : Serializable {
@@ -215,16 +369,24 @@ data class LocationData(
     }
 
     val displayHeading: String
-        get() = if (flagEmoji.isNotBlank()) "$heading $flagEmoji" else heading
+        get() {
+            val trimmed = heading.trim()
+            return when {
+                trimmed.contains("🇮🇳") || trimmed.contains("🇺🇸") || trimmed.contains("🇬🇧") -> trimmed
+                flagEmoji.isNotBlank() && (trimmed.endsWith("India", ignoreCase = true) || trimmed.contains("India", ignoreCase = true)) -> "$trimmed $flagEmoji"
+                flagEmoji.isNotBlank() -> "$trimmed $flagEmoji"
+                else -> trimmed
+            }
+        }
 }
 
 /**
  * Date and time components allowing independent editing.
  */
 data class DateTimeConfig(
-    val day: String = "Tuesday",
-    val date: String = "03/11/2026",
-    val time: String = "02:45 PM",
+    val day: String = "Monday",
+    val date: String = "19/10/2026",
+    val time: String = "12:18 PM",
     val timezone: String = "GMT +05:30",
     val customFormattedString: String? = null
 ) : Serializable {
@@ -261,16 +423,16 @@ data class NoteConfig(
 }
 
 /**
- * Top-right badge sitting on the main panel ("GPS Map Camera").
+ * Top-right badge sitting atop the main panel ("GPS Map Camera").
  */
 data class BadgeConfig(
     val visible: Boolean = true,
     val text: String = "GPS Map Camera",
     @Transient val customIconBitmap: Bitmap? = null,
-    val widthPercent: Float = 0.20074f,
-    val heightPercent: Float = 0.06906f,
-    val cornerRadiusPercent: Float = 0.01473f,
-    val backgroundColor: Int = 0x9E0C0C0C.toInt(),
+    val widthPercent: Float = 0.15430f,
+    val heightPercent: Float = 0.04427f,
+    val cornerRadiusPercent: Float = 0.00879f,
+    val backgroundColor: Int = 0xE0222428.toInt(),
     val textColor: Int = 0xFFFFFFFF.toInt()
 ) : Serializable
 
@@ -282,13 +444,13 @@ data class TypographyConfig(
     val headingFontWeight: Int = Typeface.BOLD,
     val bodyFontFamily: String = "sans-serif",
     val bodyFontWeight: Int = Typeface.NORMAL,
-    val headingFontSizePercent: Float = 0.04236f,  // 46px on 1086px
-    val bodyFontSizePercent: Float = 0.02670f,     // 29px on 1086px
-    val badgeFontSizePercent: Float = 0.01842f,    // 20px on 1086px
+    val headingFontSizePercent: Float = 0.02980f,
+    val bodyFontSizePercent: Float = 0.02003f,
+    val badgeFontSizePercent: Float = 0.01319f,
     val headingColor: Int = 0xFFFFFFFF.toInt(),
     val bodyColor: Int = 0xFFFFFFFF.toInt(),
     val badgeTextColor: Int = 0xFFFFFFFF.toInt(),
-    val lineSpacingMultiplier: Float = 1.25f,
+    val lineSpacingMultiplier: Float = 1.0f,
     val fontSizeMultiplier: Float = 1.0f
 ) : Serializable
 

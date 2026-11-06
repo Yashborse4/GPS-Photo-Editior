@@ -60,10 +60,11 @@ data class GpsPhotoData(
     val mapType: AppMapType = AppMapType.SATELLITE,
     val showMap: Boolean = true,
     val mapThumbnailScale: Float = 1.0f,
-    val mapZoom: Int = 16,
+    val mapZoom: Int = 18,
     val mapAspectRatio: String = "SQUARE", // "SQUARE", "LANDSCAPE", "WIDE"
     val showCompass: Boolean = true,
-    val showMarker: Boolean = true
+    val showMarker: Boolean = true,
+    val customMapImageUri: String? = null
 ) {
     /**
      * Location heading with Indian national flag emoji appended if not already present.
@@ -135,7 +136,7 @@ data class GpsPhotoData(
      * Example: "Monday, 19/10/2026 12:18 PM GMT +05:30"
      */
     fun formattedTimestampWithZone(): String {
-        return AppDateTimeFormatter.formatFullReferenceTimestamp(dateString, timeString, timezone)
+        return AppDateTimeFormatter.formatFullReferenceTimestamp(dayOfWeek, dateString, timeString, timezone)
     }
 
     /**

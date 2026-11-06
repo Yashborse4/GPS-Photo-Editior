@@ -28,11 +28,17 @@ class SavePhotoUseCase(
         val saveResult = MediaStoreHelper.saveBitmapToGallery(
             context = context,
             bitmap = bitmap,
+            photoData = photoData,
             titlePrefix = "GPS_MAP"
         )
 
         saveResult.fold(
             onSuccess = { (savedUri, filePath) ->
+                val epochMillis = AppDateTimeFormatter.parseToEpochMillis(
+                    photoData.dateString,
+                    photoData.timeString,
+                    photoData.timezone
+                )
                 // Record in recent history
                 val item = SavedPhotoItem(
                     id = UUID.randomUUID().toString(),
@@ -40,8 +46,8 @@ class SavePhotoUseCase(
                     filePath = filePath,
                     locationHeading = photoData.locationHeading,
                     coordinates = photoData.formattedCoordinates(),
-                    timestamp = System.currentTimeMillis(),
-                    formattedDate = AppDateTimeFormatter.getCurrentDateString() + " " + AppDateTimeFormatter.getCurrentTimeString(false)
+                    timestamp = epochMillis,
+                    formattedDate = "${photoData.dayOfWeek}, ${photoData.dateString} ${photoData.timeString}"
                 )
                 recentPhotosRepository.addPhoto(item)
                 Result.success(savedUri)

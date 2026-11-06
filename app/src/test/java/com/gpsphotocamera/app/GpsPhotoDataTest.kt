@@ -104,4 +104,53 @@ class GpsPhotoDataTest {
         assertEquals("OpenStreetMap", mapType.displayName)
         assertTrue(AppMapType.entries.contains(AppMapType.OPEN_STREET_MAP))
     }
+
+    @Test
+    fun testDayOfWeekAutoCalculation() {
+        assertEquals("Monday", AppDateTimeFormatter.calculateDayOfWeek("19/10/2026"))
+        assertEquals("Tuesday", AppDateTimeFormatter.calculateDayOfWeek("20/10/2026"))
+        assertEquals("Friday", AppDateTimeFormatter.calculateDayOfWeek("25/12/2026"))
+        assertEquals("Wednesday", AppDateTimeFormatter.calculateDayOfWeek("2026-01-07"))
+    }
+
+    @Test
+    fun testCustomDayOfWeekOverride() {
+        val data = GpsPhotoData(
+            dayOfWeek = "Special Tuesday",
+            dateString = "19/10/2026",
+            timeString = "12:18 PM",
+            timezone = "GMT +05:30"
+        )
+        assertEquals("Special Tuesday, 19/10/2026 12:18 PM GMT +05:30", data.formattedTimestampWithZone())
+    }
+
+    @Test
+    fun testExifDateTimeFormatting() {
+        val exifDateTime = AppDateTimeFormatter.formatToExifDateTime("19/10/2026", "12:18 PM")
+        assertEquals("2026:10:19 12:18:00", exifDateTime)
+    }
+
+    @Test
+    fun testTimezoneOffsetExtraction() {
+        assertEquals("+05:30", AppDateTimeFormatter.extractTimezoneOffset("GMT +05:30 (IST)"))
+        assertEquals("-04:00", AppDateTimeFormatter.extractTimezoneOffset("GMT -04:00 (EDT)"))
+        assertEquals("+00:00", AppDateTimeFormatter.extractTimezoneOffset("GMT +00:00 (UTC)"))
+    }
+
+    @Test
+    fun testGpsDateStampAndTimeStamp() {
+        assertEquals("2026:10:19", AppDateTimeFormatter.formatToGpsDateStamp("19/10/2026"))
+        // 12:18 PM IST is 06:48 AM UTC
+        val utcTime = AppDateTimeFormatter.formatToGpsTimeStamp("19/10/2026", "12:18 PM", "GMT +05:30")
+        assertEquals("06:48:00", utcTime)
+    }
+
+    @Test
+    fun testParseToEpochMillis() {
+        val millis = AppDateTimeFormatter.parseToEpochMillis("19/10/2026", "12:18 PM", "GMT +05:30")
+        assertTrue(millis > 0)
+        // Verify roundtrip through UTC formatting
+        val utcStamp = AppDateTimeFormatter.formatToGpsTimeStamp("19/10/2026", "12:18 PM", "GMT +05:30")
+        assertEquals("06:48:00", utcStamp)
+    }
 }
